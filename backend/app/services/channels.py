@@ -91,6 +91,6 @@ def parse_channel_command(text: str) -> tuple[Optional[str], str]:
     parts = cleaned.split(maxsplit=1)
     cmd = parts[0].lower()
     args = parts[1].strip() if len(parts) > 1 else ""
-    if cmd in {"/run", "/status", "/approve", "/reject"}:
+    if cmd in {"/run", "/status", "/approve", "/reject", "/approve-all"}:
         return cmd[1:], args
     return None, cleaned

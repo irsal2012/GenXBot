@@ -6,6 +6,7 @@ import asyncio
 import os
 import shutil
 import sys
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -48,6 +49,332 @@ from genxai.tools.builtin import *  # noqa: F403,F401,E402 - register built-in t
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _goal_requests_web_app(goal: str) -> bool:
+    lowered = (goal or "").lower()
+    keywords = ["web app", "webapp", "react", "fastapi", "frontend", "backend", "vite"]
+    return any(keyword in lowered for keyword in keywords)
+
+
+def _derive_app_slug(goal: str) -> str:
+    lowered = (goal or "").lower()
+    if "taskflow" in lowered:
+        return "taskflow"
+    return "generated-app"
+
+
+def _full_file_content(content: str) -> str:
+    return f"FULL_FILE_CONTENT:\n{textwrap.dedent(content).lstrip()}"
+
+
+def _build_web_app_scaffold_actions(workspace_path: str, goal: str) -> list[ProposedAction]:
+    app_slug = _derive_app_slug(goal)
+    app_root = Path(workspace_path) / app_slug
+    backend_root = app_root / "backend"
+    frontend_root = app_root / "frontend"
+
+    return [
+        ProposedAction(
+            action_type="edit",
+            description="Create backend requirements.txt",
+            file_path=str(backend_root / "requirements.txt"),
+            patch=_full_file_content(
+                """
+                fastapi==0.110.0
+                uvicorn==0.27.1
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create FastAPI backend entrypoint",
+            file_path=str(backend_root / "main.py"),
+            patch=_full_file_content(
+                """
+                from fastapi import FastAPI
+                from fastapi.middleware.cors import CORSMiddleware
+
+                app = FastAPI(title="TaskFlow API")
+
+                app.add_middleware(
+                    CORSMiddleware,
+                    allow_origins=["*"],
+                    allow_credentials=True,
+                    allow_methods=["*"],
+                    allow_headers=["*"],
+                )
+
+
+                @app.get("/health")
+                def health() -> dict:
+                    return {"status": "ok"}
+
+
+                @app.get("/tasks")
+                def list_tasks() -> list[dict]:
+                    return []
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create frontend package.json",
+            file_path=str(frontend_root / "package.json"),
+            patch=_full_file_content(
+                """
+                {
+                  "name": "taskflow-frontend",
+                  "private": true,
+                  "version": "0.0.0",
+                  "type": "module",
+                  "scripts": {
+                    "dev": "vite",
+                    "build": "vite build",
+                    "preview": "vite preview"
+                  },
+                  "dependencies": {
+                    "react": "^18.2.0",
+                    "react-dom": "^18.2.0"
+                  },
+                  "devDependencies": {
+                    "@types/react": "^18.2.66",
+                    "@types/react-dom": "^18.2.22",
+                    "@vitejs/plugin-react": "^4.2.1",
+                    "typescript": "^5.3.3",
+                    "vite": "^5.0.12"
+                  }
+                }
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create Vite config",
+            file_path=str(frontend_root / "vite.config.ts"),
+            patch=_full_file_content(
+                """
+                import { defineConfig } from 'vite'
+                import react from '@vitejs/plugin-react'
+
+                export default defineConfig({
+                  plugins: [react()],
+                })
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create frontend tsconfig",
+            file_path=str(frontend_root / "tsconfig.json"),
+            patch=_full_file_content(
+                """
+                {
+                  "compilerOptions": {
+                    "target": "ES2020",
+                    "useDefineForClassFields": true,
+                    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+                    "module": "ESNext",
+                    "skipLibCheck": true,
+                    "moduleResolution": "bundler",
+                    "resolveJsonModule": true,
+                    "isolatedModules": true,
+                    "noEmit": true,
+                    "jsx": "react-jsx",
+                    "strict": true
+                  },
+                  "include": ["src"]
+                }
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create frontend index.html",
+            file_path=str(frontend_root / "index.html"),
+            patch=_full_file_content(
+                """
+                <!doctype html>
+                <html lang="en">
+                  <head>
+                    <meta charset="UTF-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                    <title>TaskFlow</title>
+                  </head>
+                  <body>
+                    <div id="root"></div>
+                    <script type="module" src="/src/main.tsx"></script>
+                  </body>
+                </html>
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create frontend entrypoint",
+            file_path=str(frontend_root / "src" / "main.tsx"),
+            patch=_full_file_content(
+                """
+                import React from 'react'
+                import ReactDOM from 'react-dom/client'
+                import App from './App'
+                import './index.css'
+
+                ReactDOM.createRoot(document.getElementById('root')!).render(
+                  <React.StrictMode>
+                    <App />
+                  </React.StrictMode>,
+                )
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create TaskFlow UI shell",
+            file_path=str(frontend_root / "src" / "App.tsx"),
+            patch=_full_file_content(
+                """
+                const tasks = [
+                  { id: 1, title: 'Design landing page', due: '2025-02-20', tag: 'Design' },
+                  { id: 2, title: 'Implement API skeleton', due: '2025-02-22', tag: 'Backend' },
+                ]
+
+                export default function App() {
+                  return (
+                    <div className="app">
+                      <header>
+                        <h1>TaskFlow</h1>
+                        <p>Stay on top of your day with a focused task dashboard.</p>
+                      </header>
+                      <section className="summary">
+                        <div>
+                          <h3>Today</h3>
+                          <strong>{tasks.length}</strong>
+                        </div>
+                        <div>
+                          <h3>Overdue</h3>
+                          <strong>0</strong>
+                        </div>
+                        <div>
+                          <h3>Completed</h3>
+                          <strong>3</strong>
+                        </div>
+                      </section>
+                      <section className="tasks">
+                        {tasks.map((task) => (
+                          <article key={task.id}>
+                            <div>
+                              <h4>{task.title}</h4>
+                              <span>{task.tag}</span>
+                            </div>
+                            <time>Due {task.due}</time>
+                          </article>
+                        ))}
+                      </section>
+                    </div>
+                  )
+                }
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Add TaskFlow styles",
+            file_path=str(frontend_root / "src" / "index.css"),
+            patch=_full_file_content(
+                """
+                :root {
+                  font-family: 'Inter', system-ui, sans-serif;
+                  color: #0f172a;
+                  background: #f8fafc;
+                }
+
+                body {
+                  margin: 0;
+                  min-height: 100vh;
+                }
+
+                .app {
+                  max-width: 960px;
+                  margin: 0 auto;
+                  padding: 3rem 1.5rem 4rem;
+                }
+
+                header h1 {
+                  margin-bottom: 0.25rem;
+                }
+
+                .summary {
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+                  gap: 1rem;
+                  margin: 2rem 0;
+                }
+
+                .summary div {
+                  background: white;
+                  border-radius: 12px;
+                  padding: 1rem;
+                  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+                }
+
+                .tasks {
+                  display: grid;
+                  gap: 1rem;
+                }
+
+                .tasks article {
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  background: white;
+                  padding: 1rem 1.25rem;
+                  border-radius: 12px;
+                  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+                }
+
+                .tasks span {
+                  display: inline-block;
+                  margin-top: 0.25rem;
+                  font-size: 0.75rem;
+                  color: #64748b;
+                }
+                """,
+            ),
+        ),
+        ProposedAction(
+            action_type="edit",
+            description="Create TaskFlow README",
+            file_path=str(app_root / "README.md"),
+            patch=_full_file_content(
+                """
+                # TaskFlow
+
+                TaskFlow is a lightweight task manager scaffold with a React + Vite frontend and a FastAPI backend.
+
+                ## Backend
+
+                ```bash
+                cd backend
+                python -m venv .venv
+                source .venv/bin/activate
+                pip install -r requirements.txt
+                uvicorn main:app --reload --port 8001
+                ```
+
+                ## Frontend
+
+                ```bash
+                cd frontend
+                npm install
+                npm run dev
+                ```
+
+                The frontend expects the API at `http://localhost:8001`.
+                """,
+            ),
+        ),
+    ]
 
 
 class GenXBotOrchestrator:
@@ -387,7 +714,15 @@ class GenXBotOrchestrator:
                 )
             )
 
-        proposed_actions = recipe_actions or base_actions
+        if recipe_actions:
+            proposed_actions = recipe_actions
+        elif _goal_requests_web_app(request.goal):
+            proposed_actions = _build_web_app_scaffold_actions(
+                workspace_path=workspace_path,
+                goal=request.goal,
+            )
+        else:
+            proposed_actions = base_actions
         if recipe_actions:
             run.timeline.append(
                 TimelineEvent(
@@ -535,7 +870,9 @@ class GenXBotOrchestrator:
         default_repo_path: str | None = None,
     ) -> RunSession:
         repo_path = default_repo_path or "."
-        goal = f"Respond to {event.channel} message with autonomous coding workflow assistance"
+        goal = event.text.strip() or (
+            f"Respond to {event.channel} message with autonomous coding workflow assistance"
+        )
         context_parts = [
             f"Channel: {event.channel}",
             f"Event type: {event.event_type}",

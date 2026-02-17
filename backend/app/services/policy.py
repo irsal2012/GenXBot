@@ -33,7 +33,21 @@ class SafetyPolicy:
         ":(){",
     )
 
-    ALLOWED_EDIT_SUFFIXES = {".py", ".md", ".txt", ".json", ".yaml", ".yml", ".toml"}
+    ALLOWED_EDIT_SUFFIXES = {
+        ".py",
+        ".md",
+        ".txt",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".css",
+        ".html",
+    }
     ALLOWED_COMMAND_PATTERNS = (
         ("pytest",),
         ("python", "-m", "pytest"),

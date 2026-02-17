@@ -724,7 +724,7 @@ def ingest_channel_event(
             trace_id=trace_id,
         ))
 
-    if command in {"approve", "reject"}:
+    if command in {"approve", "reject", "approve-all"}:
         if _command_approver_allowlist and normalized.user_id not in _command_approver_allowlist:
             outbound_text = (
                 f"User {normalized.user_id} is not allowed to execute /{command}. "
@@ -751,6 +751,91 @@ def ingest_channel_event(
             ))
 
         parts = args.split()
+        if command == "approve-all":
+            run_id = parts[0] if parts else _channel_sessions.get_latest_run(session_key)
+            if not run_id:
+                outbound_text = "Usage: /approve-all <run_id>"
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+            run = orchestrator.get_run(run_id)
+            if not run:
+                outbound_text = f"Run {run_id} not found."
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+            approved_count = 0
+            for action in run.pending_actions:
+                if action.status != "pending":
+                    continue
+                updated = orchestrator.decide_action(
+                    run_id,
+                    ApprovalRequest(
+                        action_id=action.id,
+                        approve=True,
+                        actor=f"{normalized.channel}:{normalized.user_id}",
+                        actor_role="approver",
+                    ),
+                )
+                if updated:
+                    run = updated
+                    approved_count += 1
+            outbound_text = (
+                f"🧾 Approved {approved_count} pending action(s). Run {run.id} is now {run.status}."
+            )
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
+            )
+            return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                channel=request.channel,
+                event_type=request.event_type,
+                run=run,
+                command=command,
+                outbound_text=outbound_text,
+                outbound_delivery=delivery,
+                session_key=session_key,
+                trace_id=trace_id,
+            ))
+
         if not parts:
             outbound_text = "Usage: /approve <action_id> [run_id] or /reject <action_id> [run_id]"
             delivery = (
