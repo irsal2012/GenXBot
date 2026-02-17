@@ -70,7 +70,7 @@ class ConnectorTriggerResponse(BaseModel):
 
 
 class ChannelMessageEvent(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     event_type: str
     user_id: str
     channel_id: str
@@ -80,14 +80,14 @@ class ChannelMessageEvent(BaseModel):
 
 
 class ChannelInboundRequest(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     event_type: str
     payload: dict
     default_repo_path: Optional[str] = None
 
 
 class ChannelInboundResponse(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     event_type: str
     run: Optional["RunSession"] = None
     command: Optional[str] = None
@@ -177,7 +177,7 @@ class ApproverAllowlistUpdateRequest(BaseModel):
 
 
 class ChannelTrustPolicy(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     dm_policy: Literal["pairing", "open"] = "pairing"
     allow_from: list[str] = Field(default_factory=list)
 
@@ -188,7 +188,7 @@ class ChannelTrustPolicyUpdateRequest(BaseModel):
 
 
 class ChannelMaintenanceMode(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     enabled: bool = False
     reason: str = ""
 
@@ -204,14 +204,14 @@ class PairingApprovalRequest(BaseModel):
 
 
 class PairingApprovalResponse(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     code: str
     approved: bool
     user_id: Optional[str] = None
 
 
 class PendingPairingCode(BaseModel):
-    channel: Literal["slack", "telegram"]
+    channel: Literal["slack", "telegram", "web"]
     code: str
     user_id: str
     created_at: str = Field(default_factory=utc_now_iso)

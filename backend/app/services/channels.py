@@ -14,6 +14,8 @@ def parse_channel_event(channel: str, event_type: str, payload: dict) -> Channel
         return _parse_slack_event(event_type=event_type, payload=payload)
     if channel_key == "telegram":
         return _parse_telegram_event(event_type=event_type, payload=payload)
+    if channel_key == "web":
+        return _parse_web_event(event_type=event_type, payload=payload)
     raise ValueError(f"Unsupported channel: {channel}")
 
 
@@ -56,6 +58,24 @@ def _parse_telegram_event(event_type: str, payload: dict) -> ChannelMessageEvent
         thread_id=str(message.get("message_thread_id"))
         if message.get("message_thread_id") is not None
         else None,
+    )
+
+
+def _parse_web_event(event_type: str, payload: dict) -> ChannelMessageEvent:
+    user_id = payload.get("user_id")
+    channel_id = payload.get("channel_id") or "web-dashboard"
+    text = payload.get("text")
+    if not user_id or not text:
+        raise ValueError("Invalid web payload: missing user_id/text")
+
+    return ChannelMessageEvent(
+        channel="web",
+        event_type=event_type or "message",
+        user_id=str(user_id),
+        channel_id=str(channel_id),
+        text=str(text),
+        message_id=str(payload.get("message_id")) if payload.get("message_id") is not None else None,
+        thread_id=str(payload.get("thread_id")) if payload.get("thread_id") is not None else None,
     )
 
 

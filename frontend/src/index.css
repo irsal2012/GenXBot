@@ -70,6 +70,12 @@ body {
   border-color: rgba(148, 163, 184, 0.3);
 }
 
+.nav-item.active {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #e0f2fe;
+}
+
 .main {
   padding: 1.5rem 2rem 2rem;
   display: grid;
@@ -308,6 +314,54 @@ summary {
   margin-top: 0.75rem;
   display: grid;
   gap: 0.85rem;
+}
+
+.chat-panel {
+  min-height: 480px;
+}
+
+.chat-stream {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.6);
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.chat-bubble {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.8rem;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.chat-bubble.user {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.chat-bubble p {
+  margin: 0.4rem 0 0;
+}
+
+.chat-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: #cbd5f5;
+}
+
+.chat-input {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.chat-input input {
+  flex: 1;
 }
 
 @media (max-width: 900px) {

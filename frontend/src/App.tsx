@@ -92,12 +92,13 @@ type AuditEntry = {
 }
 
 type ChannelInboundResponse = {
-  channel: 'slack' | 'telegram'
+  channel: 'slack' | 'telegram' | 'web'
   event_type: string
   run?: RunSession | null
   command?: string | null
   outbound_text?: string | null
   outbound_delivery?: string | null
+  response_mode?: 'llm' | 'fallback'
   session_key?: string | null
 }
 
@@ -108,13 +109,13 @@ type ChannelSessionSnapshot = {
 }
 
 type ChannelTrustPolicy = {
-  channel: 'slack' | 'telegram'
+  channel: 'slack' | 'telegram' | 'web'
   dm_policy: 'pairing' | 'open'
   allow_from: string[]
 }
 
 type PendingPairingCode = {
-  channel: 'slack' | 'telegram'
+  channel: 'slack' | 'telegram' | 'web'
   code: string
   user_id: string
   created_at: string
@@ -132,6 +133,13 @@ type ChannelMetricsSnapshot = {
 type OutboundRetryQueueSnapshot = {
   queued: number
   dead_lettered: number
+}
+
+type ChatMessage = {
+  id: string
+  role: 'user' | 'bot'
+  text: string
+  timestamp: string
 }
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`
@@ -181,15 +189,92 @@ function App() {
   const [channelSessionsError, setChannelSessionsError] = useState('')
   const [channelSessionsStatus, setChannelSessionsStatus] = useState('')
   const [channelSessions, setChannelSessions] = useState<ChannelSessionSnapshot[]>([])
-  const [adminChannel, setAdminChannel] = useState<'slack' | 'telegram'>('slack')
+  const [adminChannel, setAdminChannel] = useState<'slack' | 'telegram' | 'web'>('slack')
   const [adminDmPolicy, setAdminDmPolicy] = useState<'pairing' | 'open'>('pairing')
   const [adminAllowFrom, setAdminAllowFrom] = useState('')
   const [adminApproverUsers, setAdminApproverUsers] = useState('')
   const [adminPendingCodes, setAdminPendingCodes] = useState<PendingPairingCode[]>([])
   const [adminMetrics, setAdminMetrics] = useState<ChannelMetricsSnapshot | null>(null)
   const [adminRetryQueue, setAdminRetryQueue] = useState<OutboundRetryQueueSnapshot | null>(null)
+  const [activeView, setActiveView] = useState<'overview' | 'chat'>('overview')
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatError, setChatError] = useState('')
+  const [chatSessionKey, setChatSessionKey] = useState<string | null>(null)
+  const [chatUserId] = useState(() => {
+    const stored = window.localStorage.getItem('genxbot_user_id')
+    if (stored) return stored
+    const generated =
+      globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}-${Math.floor(Math.random() * 10000)}`
+    window.localStorage.setItem('genxbot_user_id', generated)
+    return generated
+  })
 
   const apiBase = useMemo(() => import.meta.env.VITE_API_BASE ?? 'http://localhost:8000', [])
+
+  const appendChatMessage = (message: ChatMessage) => {
+    setChatMessages((prev) => [...prev, message])
+  }
+
+  const sendChatMessage = async () => {
+    const trimmed = chatInput.trim()
+    if (!trimmed || chatLoading) return
+    const timestamp = new Date().toISOString()
+    const userMessage: ChatMessage = {
+      id: `user-${timestamp}`,
+      role: 'user',
+      text: trimmed,
+      timestamp,
+    }
+    appendChatMessage(userMessage)
+    setChatInput('')
+    setChatLoading(true)
+    setChatError('')
+
+    try {
+      const res = await fetch(`${apiBase}/api/v1/runs/channels/web`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: 'web',
+          event_type: 'message',
+          default_repo_path: repoPath,
+          payload: {
+            user_id: chatUserId,
+            channel_id: 'web-dashboard',
+            text: trimmed,
+            thread_id: chatSessionKey ?? undefined,
+          },
+        }),
+      })
+      if (!res.ok) {
+        throw new Error(`Failed to send chat (${res.status})`)
+      }
+      const data = (await res.json()) as ChannelInboundResponse
+      if (data.session_key) {
+        setChatSessionKey(data.session_key)
+      }
+      if (data.outbound_text) {
+        appendChatMessage({
+          id: `bot-${Date.now()}`,
+          role: 'bot',
+          text: data.outbound_text,
+          timestamp: new Date().toISOString(),
+        })
+      }
+      if (data.run) {
+        setRun(data.run)
+        await loadAuditLog(data.run.id)
+        await loadMetrics()
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown chat error'
+      setChatError(message)
+    } finally {
+      setChatLoading(false)
+    }
+  }
 
   const loadMetrics = async () => {
     setMetricsLoading(true)
@@ -492,8 +577,19 @@ function App() {
           <p className="muted">Approval-first autonomous run control.</p>
         </div>
         <nav className="nav">
-          <button className="nav-item" type="button">
+          <button
+            className={`nav-item ${activeView === 'overview' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setActiveView('overview')}
+          >
             Overview
+          </button>
+          <button
+            className={`nav-item ${activeView === 'chat' ? 'active' : ''}`}
+            type="button"
+            onClick={() => setActiveView('chat')}
+          >
+            Chat
           </button>
           <button className="nav-item" type="button">
             Runs
@@ -535,7 +631,55 @@ function App() {
           </div>
         </header>
 
-        <section className="content-grid">
+        {activeView === 'chat' ? (
+          <section className="card chat-panel">
+            <div className="row spread">
+              <div>
+                <h2>GenXBot Chat</h2>
+                <p className="muted">Chat directly with GenXBot. Use /run to start a new run.</p>
+              </div>
+              <span className="pill">Direct</span>
+            </div>
+
+            <div className="chat-stream">
+              {chatMessages.length === 0 ? (
+                <p className="muted">
+                  No messages yet. Try: <strong>/run add login page tests</strong> or ask a question.
+                </p>
+              ) : (
+                chatMessages.map((message) => (
+                  <div key={message.id} className={`chat-bubble ${message.role}`}>
+                    <div className="chat-meta">
+                      <strong>{message.role === 'user' ? 'You' : 'GenXBot'}</strong>
+                      <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <p>{message.text}</p>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {chatError && <p className="error">{chatError}</p>}
+
+            <div className="chat-input">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Message GenXBot (e.g., /run harden API tests)"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void sendChatMessage()
+                  }
+                }}
+              />
+              <button onClick={() => void sendChatMessage()} disabled={chatLoading}>
+                {chatLoading ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="content-grid">
           <section className="card span-2">
             <div className="row spread">
               <h2>Gateway Metrics</h2>
@@ -655,7 +799,8 @@ function App() {
               {triggerLoading ? 'Triggering…' : 'Trigger Connector Run'}
             </button>
           </section>
-        </section>
+          </section>
+        )}
 
         {run && (
           <section className="content-grid">
@@ -883,10 +1028,11 @@ function App() {
                   Channel
                   <select
                     value={adminChannel}
-                    onChange={(e) => setAdminChannel(e.target.value as 'slack' | 'telegram')}
+                    onChange={(e) => setAdminChannel(e.target.value as 'slack' | 'telegram' | 'web')}
                   >
                     <option value="slack">slack</option>
                     <option value="telegram">telegram</option>
+                    <option value="web">web</option>
                   </select>
                 </label>
                 <label>

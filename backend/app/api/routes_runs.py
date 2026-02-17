@@ -126,6 +126,7 @@ _command_approver_allowlist = {
 _channel_maintenance: dict[str, ChannelMaintenanceMode] = {
     "slack": ChannelMaintenanceMode(channel="slack", enabled=False, reason=""),
     "telegram": ChannelMaintenanceMode(channel="telegram", enabled=False, reason=""),
+    "web": ChannelMaintenanceMode(channel="web", enabled=False, reason=""),
 }
 _channel_idempotency_cache: dict[str, tuple[float, ChannelInboundResponse]] = {}
 _channel_idempotency_cache_ttl_seconds = max(_settings.channel_idempotency_cache_ttl_seconds, 1)
@@ -596,14 +597,18 @@ def ingest_channel_event(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    try:
-        _webhook_security.verify(channel=request.channel, headers=dict(raw_request.headers))
-    except ValueError as exc:
-        if "Replay detected" in str(exc):
-            _channel_observability.record_replay_blocked()
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    if request.channel != "web":
+        try:
+            _webhook_security.verify(channel=request.channel, headers=dict(raw_request.headers))
+        except ValueError as exc:
+            if "Replay detected" in str(exc):
+                _channel_observability.record_replay_blocked()
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
 
-    if not _channel_trust.is_trusted(request.channel, normalized.user_id):
+    if request.channel != "web" and not _channel_trust.is_trusted(
+        request.channel,
+        normalized.user_id,
+    ):
         pending = _channel_trust.issue_pairing_code(request.channel, normalized.user_id)
         raise HTTPException(
             status_code=403,
@@ -631,11 +636,15 @@ def ingest_channel_event(
 
     if command is None and intent == _INTENT_CHAT:
         outbound_text, response_mode = _generate_chat_response(normalized.text)
-        delivery = _send_outbound(
-            channel=normalized.channel,
-            channel_id=normalized.channel_id,
-            thread_id=normalized.thread_id,
-            text=outbound_text,
+        delivery = (
+            "direct:web"
+            if normalized.channel == "web"
+            else _send_outbound(
+                channel=normalized.channel,
+                channel_id=normalized.channel_id,
+                thread_id=normalized.thread_id,
+                text=outbound_text,
+            )
         )
         return _cache_channel_response(idempotency_token, ChannelInboundResponse(
             channel=request.channel,
@@ -652,11 +661,15 @@ def ingest_channel_event(
         run_id = args.split()[0] if args else _channel_sessions.get_latest_run(session_key)
         if not run_id:
             outbound_text = "No run context found for this conversation. Start with /run <goal>."
-            delivery = _send_outbound(
-                channel=normalized.channel,
-                channel_id=normalized.channel_id,
-                thread_id=normalized.thread_id,
-                text=outbound_text,
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
             )
             return _cache_channel_response(idempotency_token, ChannelInboundResponse(
                 channel=request.channel,
@@ -670,11 +683,15 @@ def ingest_channel_event(
         run = orchestrator.get_run(run_id)
         if not run:
             outbound_text = f"Run {run_id} not found."
-            delivery = _send_outbound(
-                channel=normalized.channel,
-                channel_id=normalized.channel_id,
-                thread_id=normalized.thread_id,
-                text=outbound_text,
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
             )
             return _cache_channel_response(idempotency_token, ChannelInboundResponse(
                 channel=request.channel,
@@ -686,11 +703,15 @@ def ingest_channel_event(
                 trace_id=trace_id,
             ))
         outbound_text = format_outbound_status(run)
-        delivery = _send_outbound(
-            channel=normalized.channel,
-            channel_id=normalized.channel_id,
-            thread_id=normalized.thread_id,
-            text=outbound_text,
+        delivery = (
+            "direct:web"
+            if normalized.channel == "web"
+            else _send_outbound(
+                channel=normalized.channel,
+                channel_id=normalized.channel_id,
+                thread_id=normalized.thread_id,
+                text=outbound_text,
+            )
         )
         return _cache_channel_response(idempotency_token, ChannelInboundResponse(
             channel=request.channel,
@@ -709,11 +730,15 @@ def ingest_channel_event(
                 f"User {normalized.user_id} is not allowed to execute /{command}. "
                 "Ask an approved operator to review this action."
             )
-            delivery = _send_outbound(
-                channel=normalized.channel,
-                channel_id=normalized.channel_id,
-                thread_id=normalized.thread_id,
-                text=outbound_text,
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
             )
             return _cache_channel_response(idempotency_token, ChannelInboundResponse(
                 channel=request.channel,
@@ -728,11 +753,15 @@ def ingest_channel_event(
         parts = args.split()
         if not parts:
             outbound_text = "Usage: /approve <action_id> [run_id] or /reject <action_id> [run_id]"
-            delivery = _send_outbound(
-                channel=normalized.channel,
-                channel_id=normalized.channel_id,
-                thread_id=normalized.thread_id,
-                text=outbound_text,
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
             )
             return _cache_channel_response(idempotency_token, ChannelInboundResponse(
                 channel=request.channel,
@@ -747,11 +776,15 @@ def ingest_channel_event(
         run_id = parts[1] if len(parts) > 1 else _channel_sessions.get_latest_run(session_key)
         if not run_id:
             outbound_text = "No run context found. Provide run_id or start with /run <goal>."
-            delivery = _send_outbound(
-                channel=normalized.channel,
-                channel_id=normalized.channel_id,
-                thread_id=normalized.thread_id,
-                text=outbound_text,
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
             )
             return _cache_channel_response(idempotency_token, ChannelInboundResponse(
                 channel=request.channel,
@@ -774,11 +807,15 @@ def ingest_channel_event(
         )
         if not run:
             outbound_text = f"Run {run_id} not found."
-            delivery = _send_outbound(
-                channel=normalized.channel,
-                channel_id=normalized.channel_id,
-                thread_id=normalized.thread_id,
-                text=outbound_text,
+            delivery = (
+                "direct:web"
+                if normalized.channel == "web"
+                else _send_outbound(
+                    channel=normalized.channel,
+                    channel_id=normalized.channel_id,
+                    thread_id=normalized.thread_id,
+                    text=outbound_text,
+                )
             )
             return _cache_channel_response(idempotency_token, ChannelInboundResponse(
                 channel=request.channel,
@@ -791,11 +828,15 @@ def ingest_channel_event(
             ))
 
         outbound_text = format_outbound_action_decision(run, approved=command == "approve")
-        delivery = _send_outbound(
-            channel=normalized.channel,
-            channel_id=normalized.channel_id,
-            thread_id=normalized.thread_id,
-            text=outbound_text,
+        delivery = (
+            "direct:web"
+            if normalized.channel == "web"
+            else _send_outbound(
+                channel=normalized.channel,
+                channel_id=normalized.channel_id,
+                thread_id=normalized.thread_id,
+                text=outbound_text,
+            )
         )
         return _cache_channel_response(idempotency_token, ChannelInboundResponse(
             channel=request.channel,
@@ -815,11 +856,15 @@ def ingest_channel_event(
     )
     _channel_sessions.attach_run(session_key, run.id)
     outbound_text = format_outbound_run_created(run)
-    delivery = _send_outbound(
-        channel=normalized.channel,
-        channel_id=normalized.channel_id,
-        thread_id=normalized.thread_id,
-        text=outbound_text,
+    delivery = (
+        "direct:web"
+        if normalized.channel == "web"
+        else _send_outbound(
+            channel=normalized.channel,
+            channel_id=normalized.channel_id,
+            thread_id=normalized.thread_id,
+            text=outbound_text,
+        )
     )
     return _cache_channel_response(idempotency_token, ChannelInboundResponse(
         channel=request.channel,

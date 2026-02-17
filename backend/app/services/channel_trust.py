@@ -18,8 +18,13 @@ class ChannelTrustService:
         self._policies: dict[str, ChannelTrustPolicy] = {
             "slack": ChannelTrustPolicy(channel="slack", dm_policy="pairing", allow_from=[]),
             "telegram": ChannelTrustPolicy(channel="telegram", dm_policy="pairing", allow_from=[]),
+            "web": ChannelTrustPolicy(channel="web", dm_policy="open", allow_from=[]),
         }
-        self._paired_users: dict[str, set[str]] = {"slack": set(), "telegram": set()}
+        self._paired_users: dict[str, set[str]] = {
+            "slack": set(),
+            "telegram": set(),
+            "web": set(),
+        }
         self._pending_codes: dict[str, PendingPairingCode] = {}
         self._conn: sqlite3.Connection | None = None
 
@@ -62,13 +67,18 @@ class ChannelTrustService:
     def _bootstrap_defaults(self) -> None:
         if not self._conn:
             return
-        for channel in ("slack", "telegram"):
+        defaults = {
+            "slack": "pairing",
+            "telegram": "pairing",
+            "web": "open",
+        }
+        for channel, dm_policy in defaults.items():
             self._conn.execute(
                 """
                 INSERT OR IGNORE INTO channel_trust_policy (channel, dm_policy, allow_from_csv)
                 VALUES (?, ?, ?)
                 """,
-                (channel, "pairing", ""),
+                (channel, dm_policy, ""),
             )
         self._conn.commit()
 
@@ -94,7 +104,7 @@ class ChannelTrustService:
         channel_key = channel.strip().lower()
         with self._lock:
             if self._conn:
-                if channel_key not in {"slack", "telegram"}:
+                if channel_key not in {"slack", "telegram", "web"}:
                     raise ValueError(f"Unsupported channel: {channel}")
                 cleaned = [str(v) for v in allow_from]
                 self._conn.execute(
