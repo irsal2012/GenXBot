@@ -20,6 +20,12 @@ class SafetyPolicy:
         "npm test",
         "npm run lint",
         "npm run build",
+        "npm install",
+        "npm run dev",
+        "pip install -r",
+        "python -m pip install -r",
+        "python3 -m pip install -r",
+        "uvicorn",
     )
 
     BLOCKED_COMMAND_TOKENS = (
@@ -57,6 +63,12 @@ class SafetyPolicy:
         ("npm", "test"),
         ("npm", "run", "lint"),
         ("npm", "run", "build"),
+        ("npm", "install"),
+        ("npm", "run", "dev"),
+        ("pip", "install", "-r"),
+        ("python", "-m", "pip", "install", "-r"),
+        ("python3", "-m", "pip", "install", "-r"),
+        ("uvicorn",),
     )
     DISALLOWED_ARG_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "2>", "&"}
     APPROVAL_ROLES = {"approver", "admin"}
