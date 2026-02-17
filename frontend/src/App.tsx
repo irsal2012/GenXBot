@@ -337,6 +337,38 @@ function App() {
     await loadAuditLog(updated.id)
   }
 
+  const approveAllPending = async () => {
+    if (!run) return
+    const pending = run.pending_actions.filter((action) => action.status === 'pending')
+    if (pending.length === 0) return
+    setLoading(true)
+    setError('')
+    try {
+      let updated: RunSession | null = run
+      for (const action of pending) {
+        const res = await fetch(`${apiBase}/api/v1/runs/${run.id}/approval`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_id: action.id, approve: true, actor, actor_role: actorRole }),
+        })
+        if (!res.ok) {
+          throw new Error(`Failed to approve action ${action.id} (${res.status})`)
+        }
+        updated = (await res.json()) as RunSession
+        setRun(updated)
+      }
+      if (updated) {
+        await loadMetrics()
+        await loadAuditLog(updated.id)
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown approval error'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const loadAuditLog = async (runId: string) => {
     setAuditLoading(true)
     try {
@@ -837,29 +869,36 @@ function App() {
               {run.pending_actions.length === 0 ? (
                 <p className="muted">No actions awaiting approval.</p>
               ) : (
-                run.pending_actions.map((action) => (
-                  <div key={action.id} className="action">
-                    <p>
-                      <strong>{action.action_type.toUpperCase()}</strong>: {action.description}
-                    </p>
-                    <p className="muted">Status: {action.status}</p>
-                    {action.command && <code>{action.command}</code>}
-                    {action.file_path && <code>{action.file_path}</code>}
-                    {action.status === 'pending' && (
-                      <div className="row">
-                        <button onClick={() => decide(action.id, true)}>Approve</button>
-                        <button className="danger" onClick={() => decide(action.id, false)}>
-                          Reject
-                        </button>
-                      </div>
-                    )}
-                    {action.status === 'rejected' && (
-                      <div className="row">
-                        <button onClick={() => rerunFailedAction(action.id)}>Re-run from failed step</button>
-                      </div>
-                    )}
+                <>
+                  <div className="row" style={{ marginBottom: '1rem' }}>
+                    <button onClick={approveAllPending} disabled={loading}>
+                      {loading ? 'Approving…' : 'Approve All Pending'}
+                    </button>
                   </div>
-                ))
+                  {run.pending_actions.map((action) => (
+                    <div key={action.id} className="action">
+                      <p>
+                        <strong>{action.action_type.toUpperCase()}</strong>: {action.description}
+                      </p>
+                      <p className="muted">Status: {action.status}</p>
+                      {action.command && <code>{action.command}</code>}
+                      {action.file_path && <code>{action.file_path}</code>}
+                      {action.status === 'pending' && (
+                        <div className="row">
+                          <button onClick={() => decide(action.id, true)}>Approve</button>
+                          <button className="danger" onClick={() => decide(action.id, false)}>
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                      {action.status === 'rejected' && (
+                        <div className="row">
+                          <button onClick={() => rerunFailedAction(action.id)}>Re-run from failed step</button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </>
               )}
             </section>
 
