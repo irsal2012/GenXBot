@@ -186,15 +186,24 @@ class GenXBotOrchestrator:
         executor_runtime.set_tools(tools)
         reviewer_runtime.set_tools(tools)
 
-        memory = MemorySystem(
-            agent_id=f"genxbot_{run_id}",
-            redis_client=self._build_redis_client(),
-            graph_db=self._build_graph_client(),
-            persistence_enabled=self._settings.memory_persistence_enabled,
-            persistence_path=Path(self._settings.memory_persistence_path),
-            persistence_backend=self._settings.memory_persistence_backend,
-            persistence_sqlite_path=Path(self._settings.memory_sqlite_path),
-        )
+        memory_kwargs = {
+            "agent_id": f"genxbot_{run_id}",
+            "redis_client": self._build_redis_client(),
+            "graph_db": self._build_graph_client(),
+            "persistence_enabled": self._settings.memory_persistence_enabled,
+            "persistence_path": Path(self._settings.memory_persistence_path),
+            "persistence_backend": self._settings.memory_persistence_backend,
+            "persistence_sqlite_path": Path(self._settings.memory_sqlite_path),
+        }
+        try:
+            memory = MemorySystem(**memory_kwargs)
+        except TypeError as exc:
+            unsupported = "redis_client" in str(exc) or "graph_db" in str(exc)
+            if not unsupported:
+                raise
+            memory_kwargs.pop("redis_client", None)
+            memory_kwargs.pop("graph_db", None)
+            memory = MemorySystem(**memory_kwargs)
         planner_runtime.set_memory(memory)
         executor_runtime.set_memory(memory)
         reviewer_runtime.set_memory(memory)

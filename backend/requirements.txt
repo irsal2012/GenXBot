@@ -7,3 +7,5 @@ httpx==0.28.1
 pytest==8.4.1
 redis==5.2.1
 neo4j==5.28.1
+genxai-framework==0.1.6
+openai>=1.0.0

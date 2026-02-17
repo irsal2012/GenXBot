@@ -331,7 +331,17 @@ def create_run(
     request: RunTaskRequest,
     orchestrator: GenXBotOrchestrator = Depends(get_orchestrator),
 ) -> RunSession:
-    return orchestrator.create_run(_resolve_recipe_request(request))
+    try:
+        return orchestrator.create_run(_resolve_recipe_request(request))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Failed to create run",
+                "error": str(exc),
+                "hint": "Check backend logs for traceback and ensure dependencies are installed.",
+            },
+        ) from exc
 
 
 @router.get("/recipes", response_model=RecipeListResponse)
