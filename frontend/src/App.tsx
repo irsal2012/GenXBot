@@ -152,7 +152,7 @@ function parseDiffArtifact(content: string): { before: string; after: string } |
 
 function App() {
   const [goal, setGoal] = useState('Add endpoint-level tests for planner API and fix lint issues')
-  const [repoPath, setRepoPath] = useState('/Users/irsalimran/Desktop/GenXAI-OSS')
+  const [repoPath, setRepoPath] = useState('/Users/iimran/Desktop/GenXBot')
   const [run, setRun] = useState<RunSession | null>(null)
   const [metrics, setMetrics] = useState<EvaluationMetrics | null>(null)
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([])
@@ -176,6 +176,8 @@ function App() {
   const [channelSimId, setChannelSimId] = useState('C-SIM-1')
   const [channelLoading, setChannelLoading] = useState(false)
   const [channelResponse, setChannelResponse] = useState<ChannelInboundResponse | null>(null)
+  const [channelError, setChannelError] = useState('')
+  const [channelStatus, setChannelStatus] = useState('')
   const [channelSessions, setChannelSessions] = useState<ChannelSessionSnapshot[]>([])
   const [adminChannel, setAdminChannel] = useState<'slack' | 'telegram'>('slack')
   const [adminDmPolicy, setAdminDmPolicy] = useState<'pairing' | 'open'>('pairing')
@@ -408,6 +410,9 @@ function App() {
   const simulateChannelMessage = async () => {
     setChannelLoading(true)
     setError('')
+    setChannelError('')
+    setChannelStatus('')
+    setChannelResponse(null)
     try {
       const payload =
         channelSim === 'slack'
@@ -444,6 +449,7 @@ function App() {
       }
       const data = (await res.json()) as ChannelInboundResponse
       setChannelResponse(data)
+      setChannelStatus('Message delivered. Response received from backend.')
       if (data.run) {
         setRun(data.run)
         await loadAuditLog(data.run.id)
@@ -451,7 +457,9 @@ function App() {
       }
       await loadChannelSessions()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown channel simulation error')
+      const message = e instanceof Error ? e.message : 'Unknown channel simulation error'
+      setChannelError(message)
+      setChannelStatus('Message failed. See error below.')
     } finally {
       setChannelLoading(false)
     }
@@ -633,6 +641,9 @@ function App() {
           </button>
           <button onClick={() => void loadChannelSessions()}>Refresh Sessions</button>
         </div>
+
+        {channelStatus && <p className="muted">{channelStatus}</p>}
+        {channelError && <p className="error">{channelError}</p>}
 
         {channelResponse && (
           <div className="action">
