@@ -93,6 +93,7 @@ class ChannelInboundResponse(BaseModel):
     command: Optional[str] = None
     outbound_text: Optional[str] = None
     outbound_delivery: Optional[str] = None
+    response_mode: Optional[Literal["llm", "fallback"]] = None
     session_key: Optional[str] = None
     trace_id: Optional[str] = None
 

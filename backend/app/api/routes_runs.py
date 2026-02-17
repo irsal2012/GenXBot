@@ -378,6 +378,43 @@ def _classify_channel_intent(text: str) -> str:
 
     return _heuristic_intent(text)
 
+
+def _generate_chat_response(text: str) -> tuple[str, str]:
+    api_key = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return (
+            "👋 Thanks for the message! I'm set up for coding tasks. "
+            "Describe what you want to build or fix and I'll start a run.",
+            "fallback",
+        )
+
+    try:
+        client = OpenAI(api_key=api_key)
+        model = "gpt-4o-mini"
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are GenXBot, a helpful assistant for a coding workflow UI. "
+                        "Answer conversational questions briefly and politely. "
+                        "If the user asks about the model, mention the exact model name."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0.2,
+        )
+        message = response.choices[0].message.content.strip()
+        return f"{message}\n\n(Model: {model})", "llm"
+    except Exception:
+        return (
+            "👋 Thanks for the message! I'm set up for coding tasks. "
+            "Describe what you want to build or fix and I'll start a run.",
+            "fallback",
+        )
+
 router = APIRouter(
     prefix="/runs",
     tags=["runs"],
@@ -593,10 +630,7 @@ def ingest_channel_event(
     )
 
     if command is None and intent == _INTENT_CHAT:
-        outbound_text = (
-            "👋 Thanks for the message! I'm set up for coding tasks. "
-            "Describe what you want to build or fix and I'll start a run."
-        )
+        outbound_text, response_mode = _generate_chat_response(normalized.text)
         delivery = _send_outbound(
             channel=normalized.channel,
             channel_id=normalized.channel_id,
@@ -609,6 +643,7 @@ def ingest_channel_event(
             command="chat",
             outbound_text=outbound_text,
             outbound_delivery=delivery,
+            response_mode=response_mode,
             session_key=session_key,
             trace_id=trace_id,
         ))
