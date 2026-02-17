@@ -178,6 +178,8 @@ function App() {
   const [channelResponse, setChannelResponse] = useState<ChannelInboundResponse | null>(null)
   const [channelError, setChannelError] = useState('')
   const [channelStatus, setChannelStatus] = useState('')
+  const [channelSessionsError, setChannelSessionsError] = useState('')
+  const [channelSessionsStatus, setChannelSessionsStatus] = useState('')
   const [channelSessions, setChannelSessions] = useState<ChannelSessionSnapshot[]>([])
   const [adminChannel, setAdminChannel] = useState<'slack' | 'telegram'>('slack')
   const [adminDmPolicy, setAdminDmPolicy] = useState<'pairing' | 'open'>('pairing')
@@ -328,12 +330,15 @@ function App() {
   }
 
   const loadChannelSessions = async () => {
+    setChannelSessionsError('')
+    setChannelSessionsStatus('')
     const res = await fetch(`${apiBase}/api/v1/runs/channels/sessions`)
     if (!res.ok) {
       throw new Error(`Failed to load channel sessions (${res.status})`)
     }
     const data = (await res.json()) as ChannelSessionSnapshot[]
     setChannelSessions(data)
+    setChannelSessionsStatus('Sessions refreshed.')
   }
 
   const loadAdminPanelData = async () => {
@@ -639,11 +644,22 @@ function App() {
           <button disabled={channelLoading} onClick={simulateChannelMessage}>
             {channelLoading ? 'Sending…' : 'Send Simulated Message'}
           </button>
-          <button onClick={() => void loadChannelSessions()}>Refresh Sessions</button>
+          <button
+            onClick={() =>
+              void loadChannelSessions().catch((e) => {
+                const message = e instanceof Error ? e.message : 'Unknown sessions error'
+                setChannelSessionsError(message)
+              })
+            }
+          >
+            Refresh Sessions
+          </button>
         </div>
 
         {channelStatus && <p className="muted">{channelStatus}</p>}
         {channelError && <p className="error">{channelError}</p>}
+        {channelSessionsStatus && <p className="muted">{channelSessionsStatus}</p>}
+        {channelSessionsError && <p className="error">{channelSessionsError}</p>}
 
         {channelResponse && (
           <div className="action">

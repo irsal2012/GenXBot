@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from openai import OpenAI
 
 from app.config import get_settings
 from app.schemas import (
@@ -132,6 +134,9 @@ _admin_authz = AdminAuthorizationService()
 _admin_audit = AdminAuditService(max_entries=_settings.admin_audit_max_entries)
 
 _RECIPES_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "recipes"
+
+_INTENT_COMMAND = "command"
+_INTENT_CHAT = "chat"
 
 
 def _fallback_recipe() -> RecipeDefinition:
@@ -314,6 +319,64 @@ def _get_maintenance(channel: str) -> ChannelMaintenanceMode:
     if key not in _channel_maintenance:
         raise HTTPException(status_code=400, detail=f"Unsupported channel: {channel}")
     return _channel_maintenance[key]
+
+
+def _heuristic_intent(text: str) -> str:
+    lowered = (text or "").lower()
+    command_keywords = [
+        "run",
+        "test",
+        "fix",
+        "build",
+        "deploy",
+        "implement",
+        "refactor",
+        "add",
+        "update",
+        "create",
+        "generate",
+        "bug",
+        "feature",
+        "lint",
+        "ci",
+        "pipeline",
+    ]
+    if lowered.strip().startswith("/"):
+        return _INTENT_COMMAND
+    if any(keyword in lowered for keyword in command_keywords):
+        return _INTENT_COMMAND
+    return _INTENT_CHAT
+
+
+def _classify_channel_intent(text: str) -> str:
+    api_key = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return _heuristic_intent(text)
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You classify user messages for a coding assistant. "
+                        "Return only one token: 'command' if the message should start a coding run, "
+                        "or 'chat' if it's conversational small talk or unrelated to code execution."
+                    ),
+                },
+                {"role": "user", "content": text},
+            ],
+            temperature=0,
+        )
+        intent = response.choices[0].message.content.strip().lower()
+        if intent in {_INTENT_COMMAND, _INTENT_CHAT}:
+            return intent
+    except Exception:
+        return _heuristic_intent(text)
+
+    return _heuristic_intent(text)
 
 router = APIRouter(
     prefix="/runs",
@@ -522,10 +585,33 @@ def ingest_channel_event(
         user_id=normalized.user_id,
     )
     command, args = parse_channel_command(normalized.text)
+    intent = _classify_channel_intent(normalized.text) if command is None else _INTENT_COMMAND
+    observed_command = command or ("chat" if intent == _INTENT_CHAT else "run")
     _channel_observability.record_inbound(
         channel=normalized.channel,
-        command=command or "run",
+        command=observed_command,
     )
+
+    if command is None and intent == _INTENT_CHAT:
+        outbound_text = (
+            "👋 Thanks for the message! I'm set up for coding tasks. "
+            "Describe what you want to build or fix and I'll start a run."
+        )
+        delivery = _send_outbound(
+            channel=normalized.channel,
+            channel_id=normalized.channel_id,
+            thread_id=normalized.thread_id,
+            text=outbound_text,
+        )
+        return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+            channel=request.channel,
+            event_type=request.event_type,
+            command="chat",
+            outbound_text=outbound_text,
+            outbound_delivery=delivery,
+            session_key=session_key,
+            trace_id=trace_id,
+        ))
 
     if command == "status":
         run_id = args.split()[0] if args else _channel_sessions.get_latest_run(session_key)
