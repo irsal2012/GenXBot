@@ -484,409 +484,469 @@ function App() {
   }, [run?.id])
 
   return (
-    <main className="app">
-      <h1>GenXBot — Autonomous Coding Workflow</h1>
-      <p className="muted">Repo ingest → plan → edit → test with approval gates.</p>
-
-      <section className="card">
-        <div className="row spread">
-          <h2>Evaluation Dashboard</h2>
-          <button onClick={loadMetrics} disabled={metricsLoading}>
-            {metricsLoading ? 'Refreshing…' : 'Refresh Metrics'}
+    <div className="dashboard">
+      <aside className="sidebar">
+        <div>
+          <p className="eyebrow">OpenClaw Gateway</p>
+          <h2 className="brand">GenXBot</h2>
+          <p className="muted">Approval-first autonomous run control.</p>
+        </div>
+        <nav className="nav">
+          <button className="nav-item" type="button">
+            Overview
           </button>
-        </div>
-
-        {!metrics ? (
-          <p className="muted">No metrics available yet.</p>
-        ) : (
-          <>
-            <div className="metrics-grid">
-              <div className="metric-card">
-                <span className="metric-label">Total Runs</span>
-                <strong className="metric-value">{metrics.total_runs}</strong>
-              </div>
-              <div className="metric-card">
-                <span className="metric-label">Run Success Rate</span>
-                <strong className="metric-value">{pct(metrics.run_success_rate)}</strong>
-              </div>
-              <div className="metric-card">
-                <span className="metric-label">Run Completion Rate</span>
-                <strong className="metric-value">{pct(metrics.run_completion_rate)}</strong>
-              </div>
-              <div className="metric-card">
-                <span className="metric-label">Blocked Actions</span>
-                <strong className="metric-value">{metrics.safety.blocked_actions}</strong>
-              </div>
-            </div>
-
-            <div className="metrics-columns">
-              <div>
-                <h3>Latency</h3>
-                <ul>
-                  <li>Samples: {metrics.latency.samples}</li>
-                  <li>Average: {sec(metrics.latency.average_seconds)}</li>
-                  <li>P50: {sec(metrics.latency.p50_seconds)}</li>
-                  <li>P95: {sec(metrics.latency.p95_seconds)}</li>
-                  <li>Max: {sec(metrics.latency.max_seconds)}</li>
-                </ul>
-              </div>
-
-              <div>
-                <h3>Safety</h3>
-                <ul>
-                  <li>Total actions: {metrics.safety.total_actions}</li>
-                  <li>Approved: {metrics.safety.approved_actions}</li>
-                  <li>Rejected: {metrics.safety.rejected_actions}</li>
-                  <li>Executed: {metrics.safety.executed_actions}</li>
-                  <li>Approval rate: {pct(metrics.safety.approval_rate)}</li>
-                  <li>Rejection rate: {pct(metrics.safety.rejection_rate)}</li>
-                  <li>Exec rate of approved: {pct(metrics.safety.execution_rate_of_approved)}</li>
-                  <li>Safe command ratio: {pct(metrics.safety.safe_command_ratio)}</li>
-                </ul>
-              </div>
-            </div>
-          </>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>Start Run</h2>
-        <div className="row">
-          <label>
-            User
-            <input value={actor} onChange={(e) => setActor(e.target.value)} />
-          </label>
-          <label>
-            Role
-            <select value={actorRole} onChange={(e) => setActorRole(e.target.value as UserRole)}>
-              <option value="viewer">viewer</option>
-              <option value="executor">executor</option>
-              <option value="approver">approver</option>
-              <option value="admin">admin</option>
-            </select>
-          </label>
-        </div>
-        <label>
-          Goal
-          <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={3} />
-        </label>
-        <label>
-          Repository Path
-          <input value={repoPath} onChange={(e) => setRepoPath(e.target.value)} />
-        </label>
-        <button disabled={loading} onClick={createRun}>
-          {loading ? 'Creating…' : 'Create Run'}
-        </button>
-        {error && <p className="error">{error}</p>}
-      </section>
-
-      <section className="card">
-        <h2>Connector Trigger Run</h2>
-        <p className="muted">Create runs from GitHub/Jira/Slack webhook-style payloads.</p>
-        <div className="row">
-          <label>
-            Connector
-            <select
-              value={triggerConnector}
-              onChange={(e) => setTriggerConnector(e.target.value as 'github' | 'jira' | 'slack')}
-            >
-              <option value="github">github</option>
-              <option value="jira">jira</option>
-              <option value="slack">slack</option>
-            </select>
-          </label>
-          <label>
-            Event Type
-            <input value={triggerEventType} onChange={(e) => setTriggerEventType(e.target.value)} />
-          </label>
-        </div>
-        <label>
-          Payload (JSON)
-          <textarea value={triggerPayload} onChange={(e) => setTriggerPayload(e.target.value)} rows={5} />
-        </label>
-        <button disabled={triggerLoading} onClick={triggerConnectorRun}>
-          {triggerLoading ? 'Triggering…' : 'Trigger Connector Run'}
-        </button>
-      </section>
-
-      <section className="card">
-        <h2>Channel Console (Simulation)</h2>
-        <p className="muted">Simulate inbound Slack/Telegram chat commands and inspect session mapping.</p>
-        <div className="row">
-          <label>
-            Channel
-            <select
-              value={channelSim}
-              onChange={(e) => setChannelSim(e.target.value as 'slack' | 'telegram')}
-            >
-              <option value="slack">slack</option>
-              <option value="telegram">telegram</option>
-            </select>
-          </label>
-          <label>
-            User ID
-            <input value={channelSimUserId} onChange={(e) => setChannelSimUserId(e.target.value)} />
-          </label>
-          <label>
-            Channel/Chat ID
-            <input value={channelSimId} onChange={(e) => setChannelSimId(e.target.value)} />
-          </label>
-          <label>
-            Thread (optional)
-            <input value={channelThreadId} onChange={(e) => setChannelThreadId(e.target.value)} />
-          </label>
-        </div>
-        <label>
-          Message
-          <input value={channelMessage} onChange={(e) => setChannelMessage(e.target.value)} />
-        </label>
-        <div className="row">
-          <button disabled={channelLoading} onClick={simulateChannelMessage}>
-            {channelLoading ? 'Sending…' : 'Send Simulated Message'}
+          <button className="nav-item" type="button">
+            Runs
           </button>
-          <button
-            onClick={() =>
-              void loadChannelSessions().catch((e) => {
-                const message = e instanceof Error ? e.message : 'Unknown sessions error'
-                setChannelSessionsError(message)
-              })
-            }
-          >
-            Refresh Sessions
+          <button className="nav-item" type="button">
+            Approvals
           </button>
+          <button className="nav-item" type="button">
+            Timeline
+          </button>
+          <button className="nav-item" type="button">
+            Artifacts
+          </button>
+          <button className="nav-item" type="button">
+            Advanced
+          </button>
+        </nav>
+        <div className="sidebar-footer">
+          <span className="pill">API</span>
+          <span className="muted">{apiBase}</span>
         </div>
+      </aside>
 
-        {channelStatus && <p className="muted">{channelStatus}</p>}
-        {channelError && <p className="error">{channelError}</p>}
-        {channelSessionsStatus && <p className="muted">{channelSessionsStatus}</p>}
-        {channelSessionsError && <p className="error">{channelSessionsError}</p>}
-
-        {channelResponse && (
-          <div className="action">
-            <p>
-              <strong>Command:</strong> {channelResponse.command ?? 'n/a'}
-            </p>
-            <p>
-              <strong>Session:</strong> {channelResponse.session_key ?? 'n/a'}
-            </p>
-            <p>
-              <strong>Delivery:</strong> {channelResponse.outbound_delivery ?? 'n/a'}
-            </p>
-            <pre>{channelResponse.outbound_text ?? 'no outbound text'}</pre>
+      <div className="main">
+        <header className="topbar">
+          <div>
+            <h1>GenXBot Control Center</h1>
+            <p className="muted">Plan → approve → execute. Track every step of autonomous coding runs.</p>
           </div>
-        )}
+          <div className="topbar-actions">
+            <button onClick={loadMetrics} disabled={metricsLoading}>
+              {metricsLoading ? 'Refreshing…' : 'Refresh Metrics'}
+            </button>
+            {run && (
+              <button onClick={() => void loadAuditLog(run.id)} disabled={auditLoading}>
+                {auditLoading ? 'Refreshing…' : 'Refresh Audit'}
+              </button>
+            )}
+          </div>
+        </header>
 
-        <div className="log-stream">
-          <ul>
-            {channelSessions.map((s) => (
-              <li key={s.session_key}>
-                <strong>{s.session_key}</strong> → latest={s.latest_run_id ?? 'none'} · runs={s.run_ids.length}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
+        <section className="content-grid">
+          <section className="card span-2">
+            <div className="row spread">
+              <h2>Gateway Metrics</h2>
+              <span className="pill">Live</span>
+            </div>
 
-      <section className="card">
-        <div className="row spread">
-          <h2>Channel Admin Controls</h2>
-          <button onClick={() => void loadAdminPanelData()}>Refresh Admin Data</button>
-        </div>
-        <div className="row">
-          <label>
-            Channel
-            <select
-              value={adminChannel}
-              onChange={(e) => setAdminChannel(e.target.value as 'slack' | 'telegram')}
-            >
-              <option value="slack">slack</option>
-              <option value="telegram">telegram</option>
-            </select>
-          </label>
-          <label>
-            DM Policy
-            <select
-              value={adminDmPolicy}
-              onChange={(e) => setAdminDmPolicy(e.target.value as 'pairing' | 'open')}
-            >
-              <option value="pairing">pairing</option>
-              <option value="open">open</option>
-            </select>
-          </label>
-        </div>
-        <label>
-          allow_from (comma-separated)
-          <input value={adminAllowFrom} onChange={(e) => setAdminAllowFrom(e.target.value)} />
-        </label>
-        <button onClick={() => void saveTrustPolicy()}>Save Trust Policy</button>
-
-        <label>
-          Command Approver Allowlist (comma-separated)
-          <input value={adminApproverUsers} onChange={(e) => setAdminApproverUsers(e.target.value)} />
-        </label>
-        <button onClick={() => void saveApproverAllowlist()}>Save Approver Allowlist</button>
-
-        <h3>Pending Pairing Codes</h3>
-        <div className="log-stream">
-          <ul>
-            {adminPendingCodes.map((p) => (
-              <li key={`${p.channel}:${p.code}`}>
-                {p.user_id} · {p.code}
-                <button style={{ marginLeft: '0.5rem' }} onClick={() => void approvePairingCode(p.code)}>
-                  Approve
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <h3>Channel Observability</h3>
-        {adminMetrics && (
-          <ul>
-            <li>Inbound events: {adminMetrics.total_inbound_events}</li>
-            <li>Outbound attempts: {adminMetrics.total_outbound_attempts}</li>
-            <li>Outbound success: {adminMetrics.total_outbound_success}</li>
-            <li>Outbound failed: {adminMetrics.total_outbound_failed}</li>
-            <li>Replay blocked: {adminMetrics.total_replays_blocked}</li>
-          </ul>
-        )}
-        {adminRetryQueue && (
-          <ul>
-            <li>Outbound retry queued: {adminRetryQueue.queued}</li>
-            <li>Dead letters: {adminRetryQueue.dead_lettered}</li>
-          </ul>
-        )}
-      </section>
-
-      {run && (
-        <>
-          <section className="card">
-            <h2>Run Status</h2>
-            <p>
-              <strong>ID:</strong> {run.id}
-            </p>
-            <p>
-              <strong>Status:</strong> {run.status}
-            </p>
-            <p>
-              <strong>Memory:</strong> {run.memory_summary}
-            </p>
-            <p>
-              <strong>Active User:</strong> {actor} ({actorRole})
-            </p>
-            <p className="muted">Live log stream: {runPolling ? 'active (2s polling)' : 'idle'}</p>
-          </section>
-
-          <section className="card">
-            <h2>Plan</h2>
-            <ul>
-              {run.plan_steps.map((step) => (
-                <li key={step.id}>
-                  {step.title} <span className="pill">{step.status}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="card">
-            <h2>Pending Actions</h2>
-            {run.pending_actions.length === 0 ? (
-              <p>No actions.</p>
+            {!metrics ? (
+              <p className="muted">No metrics available yet.</p>
             ) : (
-              run.pending_actions.map((action) => (
-                <div key={action.id} className="action">
-                  <p>
-                    <strong>{action.action_type.toUpperCase()}</strong>: {action.description}
-                  </p>
-                  <p className="muted">Status: {action.status}</p>
-                  {action.command && <code>{action.command}</code>}
-                  {action.file_path && <code>{action.file_path}</code>}
-                  {action.status === 'pending' && (
-                    <div className="row">
-                      <button onClick={() => decide(action.id, true)}>Approve</button>
-                      <button className="danger" onClick={() => decide(action.id, false)}>
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                  {action.status === 'rejected' && (
-                    <div className="row">
-                      <button onClick={() => rerunFailedAction(action.id)}>Re-run from failed step</button>
-                    </div>
-                  )}
+              <>
+                <div className="metrics-grid">
+                  <div className="metric-card">
+                    <span className="metric-label">Total Runs</span>
+                    <strong className="metric-value">{metrics.total_runs}</strong>
+                  </div>
+                  <div className="metric-card">
+                    <span className="metric-label">Run Success Rate</span>
+                    <strong className="metric-value">{pct(metrics.run_success_rate)}</strong>
+                  </div>
+                  <div className="metric-card">
+                    <span className="metric-label">Run Completion Rate</span>
+                    <strong className="metric-value">{pct(metrics.run_completion_rate)}</strong>
+                  </div>
+                  <div className="metric-card">
+                    <span className="metric-label">Blocked Actions</span>
+                    <strong className="metric-value">{metrics.safety.blocked_actions}</strong>
+                  </div>
                 </div>
-              ))
+
+                <div className="metrics-columns">
+                  <div>
+                    <h3>Latency</h3>
+                    <ul>
+                      <li>Samples: {metrics.latency.samples}</li>
+                      <li>Average: {sec(metrics.latency.average_seconds)}</li>
+                      <li>P50: {sec(metrics.latency.p50_seconds)}</li>
+                      <li>P95: {sec(metrics.latency.p95_seconds)}</li>
+                      <li>Max: {sec(metrics.latency.max_seconds)}</li>
+                    </ul>
+                  </div>
+
+                  <div>
+                    <h3>Safety</h3>
+                    <ul>
+                      <li>Total actions: {metrics.safety.total_actions}</li>
+                      <li>Approved: {metrics.safety.approved_actions}</li>
+                      <li>Rejected: {metrics.safety.rejected_actions}</li>
+                      <li>Executed: {metrics.safety.executed_actions}</li>
+                      <li>Approval rate: {pct(metrics.safety.approval_rate)}</li>
+                      <li>Rejection rate: {pct(metrics.safety.rejection_rate)}</li>
+                      <li>Exec rate of approved: {pct(metrics.safety.execution_rate_of_approved)}</li>
+                      <li>Safe command ratio: {pct(metrics.safety.safe_command_ratio)}</li>
+                    </ul>
+                  </div>
+                </div>
+              </>
             )}
           </section>
 
           <section className="card">
-            <h2>Live Timeline Stream</h2>
-            <div className="log-stream">
-              <ul>
-                {[...run.timeline].reverse().map((event, idx) => (
-                  <li key={`${event.timestamp}-${idx}`}>
-                    <strong>{event.agent}</strong> · {event.event} — {event.content}
-                  </li>
-                ))}
-              </ul>
+            <h2>Start a Run</h2>
+            <p className="muted">Create a gated autonomous workflow for a target repository.</p>
+            <div className="row">
+              <label>
+                User
+                <input value={actor} onChange={(e) => setActor(e.target.value)} />
+              </label>
+              <label>
+                Role
+                <select value={actorRole} onChange={(e) => setActorRole(e.target.value as UserRole)}>
+                  <option value="viewer">viewer</option>
+                  <option value="executor">executor</option>
+                  <option value="approver">approver</option>
+                  <option value="admin">admin</option>
+                </select>
+              </label>
             </div>
+            <label>
+              Goal
+              <textarea value={goal} onChange={(e) => setGoal(e.target.value)} rows={3} />
+            </label>
+            <label>
+              Repository Path
+              <input value={repoPath} onChange={(e) => setRepoPath(e.target.value)} />
+            </label>
+            <button disabled={loading} onClick={createRun}>
+              {loading ? 'Creating…' : 'Create Run'}
+            </button>
+            {error && <p className="error">{error}</p>}
           </section>
 
           <section className="card">
-            <div className="row spread">
-              <h2>Audit View</h2>
-              <button onClick={() => void loadAuditLog(run.id)} disabled={auditLoading}>
-                {auditLoading ? 'Refreshing…' : 'Refresh Audit'}
-              </button>
+            <h2>Connector Trigger</h2>
+            <p className="muted">Create runs from GitHub/Jira/Slack webhook-style payloads.</p>
+            <div className="row">
+              <label>
+                Connector
+                <select
+                  value={triggerConnector}
+                  onChange={(e) => setTriggerConnector(e.target.value as 'github' | 'jira' | 'slack')}
+                >
+                  <option value="github">github</option>
+                  <option value="jira">jira</option>
+                  <option value="slack">slack</option>
+                </select>
+              </label>
+              <label>
+                Event Type
+                <input value={triggerEventType} onChange={(e) => setTriggerEventType(e.target.value)} />
+              </label>
             </div>
-            {auditLog.length === 0 ? (
-              <p className="muted">No audit entries.</p>
-            ) : (
+            <label>
+              Payload (JSON)
+              <textarea value={triggerPayload} onChange={(e) => setTriggerPayload(e.target.value)} rows={5} />
+            </label>
+            <button disabled={triggerLoading} onClick={triggerConnectorRun}>
+              {triggerLoading ? 'Triggering…' : 'Trigger Connector Run'}
+            </button>
+          </section>
+        </section>
+
+        {run && (
+          <section className="content-grid">
+            <section className="card">
+              <h2>Run Status</h2>
+              <p>
+                <strong>ID:</strong> {run.id}
+              </p>
+              <p>
+                <strong>Status:</strong> {run.status}
+              </p>
+              <p>
+                <strong>Memory:</strong> {run.memory_summary}
+              </p>
+              <p>
+                <strong>Active User:</strong> {actor} ({actorRole})
+              </p>
+              <p className="muted">Live log stream: {runPolling ? 'active (2s polling)' : 'idle'}</p>
+            </section>
+
+            <section className="card">
+              <h2>Plan Steps</h2>
+              <ul>
+                {run.plan_steps.map((step) => (
+                  <li key={step.id}>
+                    {step.title} <span className="pill">{step.status}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="card span-2">
+              <h2>Approval Queue</h2>
+              {run.pending_actions.length === 0 ? (
+                <p className="muted">No actions awaiting approval.</p>
+              ) : (
+                run.pending_actions.map((action) => (
+                  <div key={action.id} className="action">
+                    <p>
+                      <strong>{action.action_type.toUpperCase()}</strong>: {action.description}
+                    </p>
+                    <p className="muted">Status: {action.status}</p>
+                    {action.command && <code>{action.command}</code>}
+                    {action.file_path && <code>{action.file_path}</code>}
+                    {action.status === 'pending' && (
+                      <div className="row">
+                        <button onClick={() => decide(action.id, true)}>Approve</button>
+                        <button className="danger" onClick={() => decide(action.id, false)}>
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                    {action.status === 'rejected' && (
+                      <div className="row">
+                        <button onClick={() => rerunFailedAction(action.id)}>Re-run from failed step</button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </section>
+
+            <section className="card span-2">
+              <h2>Timeline</h2>
               <div className="log-stream">
                 <ul>
-                  {[...auditLog].reverse().map((entry) => (
-                    <li key={entry.id}>
-                      <strong>{entry.actor}</strong> ({entry.actor_role}) · {entry.action} — {entry.detail}
+                  {[...run.timeline].reverse().map((event, idx) => (
+                    <li key={`${event.timestamp}-${idx}`}>
+                      <strong>{event.agent}</strong> · {event.event} — {event.content}
                     </li>
                   ))}
                 </ul>
               </div>
-            )}
-          </section>
+            </section>
 
-          <section className="card">
-            <h2>Artifacts</h2>
-            {run.artifacts.map((artifact) => (
-              <details key={artifact.id}>
-                <summary>
-                  {artifact.title} <span className="pill">{artifact.kind}</span>
-                </summary>
-                {artifact.kind === 'diff' ? (
-                  (() => {
-                    const parsed = parseDiffArtifact(artifact.content)
-                    if (!parsed) return <pre>{artifact.content}</pre>
-                    return (
-                      <div className="diff-grid">
-                        <div>
-                          <h4>Before</h4>
-                          <pre>{parsed.before}</pre>
+            <section className="card span-2">
+              <h2>Audit View</h2>
+              {auditLog.length === 0 ? (
+                <p className="muted">No audit entries.</p>
+              ) : (
+                <div className="log-stream">
+                  <ul>
+                    {[...auditLog].reverse().map((entry) => (
+                      <li key={entry.id}>
+                        <strong>{entry.actor}</strong> ({entry.actor_role}) · {entry.action} — {entry.detail}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+
+            <section className="card span-2">
+              <h2>Artifacts</h2>
+              {run.artifacts.map((artifact) => (
+                <details key={artifact.id}>
+                  <summary>
+                    {artifact.title} <span className="pill">{artifact.kind}</span>
+                  </summary>
+                  {artifact.kind === 'diff' ? (
+                    (() => {
+                      const parsed = parseDiffArtifact(artifact.content)
+                      if (!parsed) return <pre>{artifact.content}</pre>
+                      return (
+                        <div className="diff-grid">
+                          <div>
+                            <h4>Before</h4>
+                            <pre>{parsed.before}</pre>
+                          </div>
+                          <div>
+                            <h4>After</h4>
+                            <pre>{parsed.after}</pre>
+                          </div>
                         </div>
-                        <div>
-                          <h4>After</h4>
-                          <pre>{parsed.after}</pre>
-                        </div>
-                      </div>
-                    )
-                  })()
-                ) : (
-                  <pre>{artifact.content}</pre>
-                )}
-              </details>
-            ))}
+                      )
+                    })()
+                  ) : (
+                    <pre>{artifact.content}</pre>
+                  )}
+                </details>
+              ))}
+            </section>
           </section>
-        </>
-      )}
-    </main>
+        )}
+
+        <section className="card advanced">
+          <div className="row spread">
+            <div>
+              <h2>Advanced Operations</h2>
+              <p className="muted">Simulation, channel policies, and admin-only observability tools.</p>
+            </div>
+            <button onClick={() => void loadAdminPanelData()}>Refresh Admin Data</button>
+          </div>
+
+          <details>
+            <summary>Channel Console (Simulation)</summary>
+            <div className="detail-body">
+              <p className="muted">
+                Simulate inbound Slack/Telegram chat commands and inspect session mapping. Commands use
+                <strong> /run</strong>, <strong>/status</strong>, <strong>/approve</strong>, and{' '}
+                <strong>/reject</strong> prefixes.
+              </p>
+              <div className="row">
+                <label>
+                  Channel
+                  <select
+                    value={channelSim}
+                    onChange={(e) => setChannelSim(e.target.value as 'slack' | 'telegram')}
+                  >
+                    <option value="slack">slack</option>
+                    <option value="telegram">telegram</option>
+                  </select>
+                </label>
+                <label>
+                  User ID
+                  <input value={channelSimUserId} onChange={(e) => setChannelSimUserId(e.target.value)} />
+                </label>
+                <label>
+                  Channel/Chat ID
+                  <input value={channelSimId} onChange={(e) => setChannelSimId(e.target.value)} />
+                </label>
+                <label>
+                  Thread (optional)
+                  <input value={channelThreadId} onChange={(e) => setChannelThreadId(e.target.value)} />
+                </label>
+              </div>
+              <label>
+                Message
+                <input value={channelMessage} onChange={(e) => setChannelMessage(e.target.value)} />
+                <span className="muted">Example: /run scaffold API smoke tests</span>
+              </label>
+              <div className="row">
+                <button disabled={channelLoading} onClick={simulateChannelMessage}>
+                  {channelLoading ? 'Sending…' : 'Send Simulated Message'}
+                </button>
+                <button
+                  onClick={() =>
+                    void loadChannelSessions().catch((e) => {
+                      const message = e instanceof Error ? e.message : 'Unknown sessions error'
+                      setChannelSessionsError(message)
+                    })
+                  }
+                >
+                  Refresh Sessions
+                </button>
+              </div>
+
+              {channelStatus && <p className="muted">{channelStatus}</p>}
+              {channelError && <p className="error">{channelError}</p>}
+              {channelSessionsStatus && <p className="muted">{channelSessionsStatus}</p>}
+              {channelSessionsError && <p className="error">{channelSessionsError}</p>}
+
+              {channelResponse && (
+                <div className="action">
+                  <p>
+                    <strong>Command:</strong> {channelResponse.command ?? 'n/a'}
+                  </p>
+                  <p>
+                    <strong>Session:</strong> {channelResponse.session_key ?? 'n/a'}
+                  </p>
+                  <p>
+                    <strong>Delivery:</strong> {channelResponse.outbound_delivery ?? 'n/a'}
+                  </p>
+                  <pre>{channelResponse.outbound_text ?? 'no outbound text'}</pre>
+                </div>
+              )}
+
+              <div className="log-stream">
+                <ul>
+                  {channelSessions.map((s) => (
+                    <li key={s.session_key}>
+                      <strong>{s.session_key}</strong> → latest={s.latest_run_id ?? 'none'} · runs={s.run_ids.length}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          </details>
+
+          <details>
+            <summary>Channel Admin Controls</summary>
+            <div className="detail-body">
+              <div className="row">
+                <label>
+                  Channel
+                  <select
+                    value={adminChannel}
+                    onChange={(e) => setAdminChannel(e.target.value as 'slack' | 'telegram')}
+                  >
+                    <option value="slack">slack</option>
+                    <option value="telegram">telegram</option>
+                  </select>
+                </label>
+                <label>
+                  DM Policy
+                  <select
+                    value={adminDmPolicy}
+                    onChange={(e) => setAdminDmPolicy(e.target.value as 'pairing' | 'open')}
+                  >
+                    <option value="pairing">pairing</option>
+                    <option value="open">open</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                allow_from (comma-separated)
+                <input value={adminAllowFrom} onChange={(e) => setAdminAllowFrom(e.target.value)} />
+              </label>
+              <button onClick={() => void saveTrustPolicy()}>Save Trust Policy</button>
+
+              <label>
+                Command Approver Allowlist (comma-separated)
+                <input value={adminApproverUsers} onChange={(e) => setAdminApproverUsers(e.target.value)} />
+              </label>
+              <button onClick={() => void saveApproverAllowlist()}>Save Approver Allowlist</button>
+
+              <h3>Pending Pairing Codes</h3>
+              <div className="log-stream">
+                <ul>
+                  {adminPendingCodes.map((p) => (
+                    <li key={`${p.channel}:${p.code}`}>
+                      {p.user_id} · {p.code}
+                      <button style={{ marginLeft: '0.5rem' }} onClick={() => void approvePairingCode(p.code)}>
+                        Approve
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <h3>Channel Observability</h3>
+              {adminMetrics && (
+                <ul>
+                  <li>Inbound events: {adminMetrics.total_inbound_events}</li>
+                  <li>Outbound attempts: {adminMetrics.total_outbound_attempts}</li>
+                  <li>Outbound success: {adminMetrics.total_outbound_success}</li>
+                  <li>Outbound failed: {adminMetrics.total_outbound_failed}</li>
+                  <li>Replay blocked: {adminMetrics.total_replays_blocked}</li>
+                </ul>
+              )}
+              {adminRetryQueue && (
+                <ul>
+                  <li>Outbound retry queued: {adminRetryQueue.queued}</li>
+                  <li>Dead letters: {adminRetryQueue.dead_lettered}</li>
+                </ul>
+              )}
+            </div>
+          </details>
+        </section>
+      </div>
+    </div>
   )
 }
 
