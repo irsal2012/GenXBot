@@ -18,11 +18,17 @@ def format_outbound_run_created(run: RunSession) -> str:
 
 def format_outbound_status(run: RunSession) -> str:
     pending = [a for a in run.pending_actions if a.status == "pending"]
+    pending_lines = "\n".join(
+        f"- action_id: {action.id}\n  type: {action.action_type}\n  summary: {action.description}"
+        for action in pending
+    )
+    pending_section = f"\nPending action details:\n{pending_lines}" if pending_lines else ""
     return (
         f"📌 Run {run.id}\n"
         f"Status: {run.status}\n"
         f"Pending actions: {len(pending)}\n"
         f"Timeline events: {len(run.timeline)}"
+        f"{pending_section}"
     )
 
 

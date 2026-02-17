@@ -67,6 +67,8 @@ class GenXBotOrchestrator:
     def _prepare_workspace(self, run_id: str, repo_path: str) -> str:
         """Create per-run sandbox workspace if enabled, else use repo path directly."""
         source = Path(repo_path).resolve()
+        if not source.exists():
+            source.mkdir(parents=True, exist_ok=True)
         if not self._settings.sandbox_enabled:
             return str(source)
 
