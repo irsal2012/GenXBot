@@ -44,3 +44,4 @@ frontend/dist/
 # Local temp/generated files
 backend/tmp_*
 *.tmp
+.genxai/
