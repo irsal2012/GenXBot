@@ -1,0 +1,179 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  font: inherit;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+}
+
+button {
+  width: fit-content;
+  border: 1px solid #2563eb;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+button.danger {
+  border-color: #b91c1c;
+  background: #b91c1c;
+}
+
+.muted {
+  color: #4b5563;
+}
+
+.error {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.pill {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 0.8rem;
+}
+
+.action {
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.row.spread {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.metrics-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.metric-card {
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  border-radius: 0.6rem;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.metric-label {
+  color: #1f2937;
+  font-size: 0.8rem;
+}
+
+.metric-value {
+  color: #111827;
+  font-size: 1.15rem;
+}
+
+.metrics-columns {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.metrics-columns h3 {
+  margin: 0 0 0.35rem;
+}
+
+.metrics-columns ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.log-stream {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.6rem;
+  background: #fafafa;
+}
+
+.log-stream ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.diff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.diff-grid h4 {
+  margin: 0 0 0.35rem;
+  color: #1f2937;
+}
+
+pre,
+code {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  overflow-x: auto;
+}

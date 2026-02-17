@@ -1,0 +1,16 @@
+{
+  "name": "genxbot",
+  "version": "0.1.0",
+  "description": "Global CLI for onboarding and daemonizing GenXBot",
+  "license": "MIT",
+  "bin": {
+    "genxbot": "bin/genxbot.js"
+  },
+  "type": "commonjs",
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

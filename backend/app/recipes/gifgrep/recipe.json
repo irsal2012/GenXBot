@@ -1,0 +1,26 @@
+{
+  "id": "gifgrep",
+  "name": "Gifgrep",
+  "description": "Reusable recipe mapped from capability: gifgrep",
+  "goal_template": "Execute the {recipe_name} workflow for this repository and summarize outcomes",
+  "context_template": "recipe_id={recipe_id}\nfocus={focus}\npriority={priority}\nconstraints={constraints}",
+  "tags": [
+    "capability-library",
+    "template-parity",
+    "recipe"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Run baseline checks for {recipe_name}",
+      "command": "pytest -q"
+    },
+    {
+      "action_type": "edit",
+      "description": "Write summary artifact for {recipe_name}",
+      "file_path": "recipe_outputs/{recipe_id}_summary.md",
+      "patch": "FULL_FILE_CONTENT:\n# Recipe Execution Summary\\n\\n- recipe: {recipe_name}\\n- focus: {focus}\\n- priority: {priority}\\n- constraints: {constraints}\\n"
+    }
+  ]
+}

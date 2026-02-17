@@ -1,0 +1,25 @@
+{
+  "id": "test-hardening",
+  "name": "Test Hardening",
+  "description": "Improve and stabilize tests around a target area",
+  "goal_template": "Harden tests for {target_area} and summarize gaps",
+  "context_template": "focus={target_area}\npriority={priority}",
+  "tags": [
+    "testing",
+    "quality"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Run baseline checks for {recipe_name}",
+      "command": "pytest -q"
+    },
+    {
+      "action_type": "edit",
+      "description": "Write summary artifact for {recipe_name}",
+      "file_path": "recipe_outputs/{recipe_id}_summary.md",
+      "patch": "FULL_FILE_CONTENT:\n# Recipe Execution Summary\\n\\n- recipe: {recipe_name}\\n- focus: {focus}\\n- priority: {priority}\\n- constraints: {constraints}\\n"
+    }
+  ]
+}
