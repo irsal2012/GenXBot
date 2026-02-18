@@ -196,12 +196,15 @@ function App() {
   const [adminPendingCodes, setAdminPendingCodes] = useState<PendingPairingCode[]>([])
   const [adminMetrics, setAdminMetrics] = useState<ChannelMetricsSnapshot | null>(null)
   const [adminRetryQueue, setAdminRetryQueue] = useState<OutboundRetryQueueSnapshot | null>(null)
-  const [activeView, setActiveView] = useState<'overview' | 'chat'>('overview')
+  const [activeView, setActiveView] = useState<'overview' | 'chat' | 'runs'>('overview')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [chatError, setChatError] = useState('')
   const [chatSessionKey, setChatSessionKey] = useState<string | null>(null)
+  const [runsList, setRunsList] = useState<RunSession[]>([])
+  const [runsLoading, setRunsLoading] = useState(false)
+  const [runsError, setRunsError] = useState('')
   const [chatUserId] = useState(() => {
     const stored = window.localStorage.getItem('genxbot_user_id')
     if (stored) return stored
@@ -296,6 +299,24 @@ function App() {
     loadMetrics()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase])
+
+  const loadRunsList = async () => {
+    setRunsLoading(true)
+    setRunsError('')
+    try {
+      const res = await fetch(`${apiBase}/api/v1/runs`)
+      if (!res.ok) {
+        throw new Error(`Failed to load runs (${res.status})`)
+      }
+      const data = (await res.json()) as RunSession[]
+      setRunsList(data)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown runs error'
+      setRunsError(message)
+    } finally {
+      setRunsLoading(false)
+    }
+  }
 
   const createRun = async () => {
     setLoading(true)
@@ -623,7 +644,14 @@ function App() {
           >
             Chat
           </button>
-          <button className="nav-item" type="button">
+          <button
+            className={`nav-item ${activeView === 'runs' ? 'active' : ''}`}
+            type="button"
+            onClick={() => {
+              setActiveView('runs')
+              void loadRunsList()
+            }}
+          >
             Runs
           </button>
           <button className="nav-item" type="button">
@@ -709,6 +737,38 @@ function App() {
                 {chatLoading ? 'Sending…' : 'Send'}
               </button>
             </div>
+          </section>
+        ) : activeView === 'runs' ? (
+          <section className="card">
+            <div className="row spread">
+              <div>
+                <h2>Runs</h2>
+                <p className="muted">Browse recent runs and load one into the dashboard.</p>
+              </div>
+              <button onClick={() => void loadRunsList()} disabled={runsLoading}>
+                {runsLoading ? 'Refreshing…' : 'Refresh'}
+              </button>
+            </div>
+            {runsError && <p className="error">{runsError}</p>}
+            {runsList.length === 0 ? (
+              <p className="muted">No runs found yet.</p>
+            ) : (
+              <div className="log-stream">
+                <ul>
+                  {[...runsList].reverse().map((item) => (
+                    <li key={item.id}>
+                      <div className="row spread">
+                        <div>
+                          <strong>{item.id}</strong> · {item.status}
+                          <div className="muted">Goal: {item.goal}</div>
+                        </div>
+                        <button onClick={() => setRun(item)}>Open</button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </section>
         ) : (
           <section className="content-grid">

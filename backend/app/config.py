@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     channel_outbound_retry_max_attempts: int = 3
     channel_outbound_retry_backoff_seconds: float = 0.2
 
+    telegram_open_by_default: bool = False
+
     channel_command_approver_allowlist: str = ""
     channel_idempotency_cache_ttl_seconds: int = 900
     channel_idempotency_cache_max_entries: int = 1000

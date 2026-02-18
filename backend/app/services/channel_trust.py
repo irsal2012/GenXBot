@@ -14,10 +14,16 @@ class ChannelTrustService:
     """In-memory trust policy and pairing workflow for channels."""
 
     def __init__(self, db_path: str | None = None) -> None:
+        from app.config import get_settings
+        settings = get_settings()
         self._lock = Lock()
         self._policies: dict[str, ChannelTrustPolicy] = {
             "slack": ChannelTrustPolicy(channel="slack", dm_policy="pairing", allow_from=[]),
-            "telegram": ChannelTrustPolicy(channel="telegram", dm_policy="pairing", allow_from=[]),
+            "telegram": ChannelTrustPolicy(
+                channel="telegram",
+                dm_policy="open" if settings.telegram_open_by_default else "pairing",
+                allow_from=[],
+            ),
             "web": ChannelTrustPolicy(channel="web", dm_policy="open", allow_from=[]),
         }
         self._paired_users: dict[str, set[str]] = {
@@ -65,11 +71,12 @@ class ChannelTrustService:
             self._bootstrap_defaults()
 
     def _bootstrap_defaults(self) -> None:
+        from app.config import get_settings
         if not self._conn:
             return
         defaults = {
             "slack": "pairing",
-            "telegram": "pairing",
+            "telegram": "open" if get_settings().telegram_open_by_default else "pairing",
             "web": "open",
         }
         for channel, dm_policy in defaults.items():

@@ -12,9 +12,12 @@ from openai import OpenAI
 
 from app.config import get_settings
 from app.schemas import (
+    AdminAuditEntry,
+    AdminAuditSnapshot,
     ApprovalRequest,
     ApproverAllowlistResponse,
     ApproverAllowlistUpdateRequest,
+    AuditEntry,
     ChannelInboundRequest,
     ChannelInboundResponse,
     ChannelMaintenanceMode,
@@ -22,24 +25,21 @@ from app.schemas import (
     ChannelMetricsSnapshot,
     ChannelSessionSnapshot,
     ChannelTrustPolicy,
-    OutboundRetryQueueSnapshot,
-    OutboundRetryJob,
-    QueueHealthSnapshot,
-    IdempotencyCacheSnapshot,
-    AdminAuditSnapshot,
     ChannelTrustPolicyUpdateRequest,
-    AuditEntry,
-    AdminAuditEntry,
     ConnectorTriggerRequest,
     ConnectorTriggerResponse,
     EvaluationMetrics,
+    IdempotencyCacheSnapshot,
+    OutboundRetryJob,
+    OutboundRetryQueueSnapshot,
     PairingApprovalRequest,
     PairingApprovalResponse,
     PendingPairingCode,
+    QueueHealthSnapshot,
     QueueJobStatusResponse,
     RerunFailedStepRequest,
-    RecipeCreateRequest,
     RecipeActionTemplate,
+    RecipeCreateRequest,
     RecipeDefinition,
     RecipeListResponse,
     RunSession,
@@ -961,6 +961,26 @@ def ingest_channel_event(
         session_key=session_key,
         trace_id=trace_id,
     ))
+
+
+@router.post("/channels/telegram/webhook", response_model=ChannelInboundResponse)
+async def ingest_telegram_webhook(
+    raw_request: Request,
+    orchestrator: GenXBotOrchestrator = Depends(get_orchestrator),
+) -> ChannelInboundResponse:
+    payload = await raw_request.json()
+    inbound = ChannelInboundRequest(
+        channel="telegram",
+        event_type="message",
+        payload=payload,
+        default_repo_path=None,
+    )
+    return ingest_channel_event(
+        channel="telegram",
+        request=inbound,
+        raw_request=raw_request,
+        orchestrator=orchestrator,
+    )
 
 
 @router.get("/channels/sessions", response_model=list[ChannelSessionSnapshot])
