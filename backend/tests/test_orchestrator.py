@@ -39,6 +39,8 @@ def test_create_run_generates_plan_and_pending_actions(tmp_path: Path) -> None:
     assert len(run.plan_steps) == 4
     assert len(run.pending_actions) >= 1
     assert len(run.timeline) >= 2
+    assert any(evt.agent == "genxai_runtime" for evt in run.timeline)
+    assert "WorkflowExecutor" in run.memory_summary
 
 
 def test_approval_executes_action_and_updates_artifacts(tmp_path: Path) -> None:

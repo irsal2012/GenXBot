@@ -42,7 +42,7 @@ def _ensure_repo_root_on_path() -> None:
 
 _ensure_repo_root_on_path()
 
-from genxai import AgentFactory, AgentRuntime, CriticReviewFlow, MemorySystem, ToolRegistry  # noqa: E402
+from genxai import AgentFactory, MemorySystem, ToolRegistry, WorkflowExecutor  # noqa: E402
 from genxai.tools import Tool  # noqa: E402
 from genxai.tools.builtin import *  # noqa: F403,F401,E402 - register built-in tools
 
@@ -481,39 +481,34 @@ class GenXBotOrchestrator:
         ]
         enabled_tools = [name for name in preferred_tools if name in tools]
 
-        planner = AgentFactory.create_agent(
-            id=f"planner_{run_id}",
+        planner_id = f"planner_{run_id}"
+        executor_id = f"executor_{run_id}"
+        reviewer_id = f"reviewer_{run_id}"
+
+        AgentFactory.create_agent(
+            id=planner_id,
             role="Codebase Planner",
             goal="Produce safe, testable coding plans from user goals",
             llm_model="gpt-4",
             tools=enabled_tools,
             enable_memory=True,
         )
-        executor = AgentFactory.create_agent(
-            id=f"executor_{run_id}",
+        AgentFactory.create_agent(
+            id=executor_id,
             role="Code Executor",
             goal="Propose and execute coding actions safely",
             llm_model="gpt-4",
             tools=enabled_tools,
             enable_memory=True,
         )
-        reviewer = AgentFactory.create_agent(
-            id=f"reviewer_{run_id}",
+        AgentFactory.create_agent(
+            id=reviewer_id,
             role="Code Reviewer",
             goal="Review plans and actions for safety and quality",
             llm_model="gpt-4",
             tools=enabled_tools,
             enable_memory=True,
         )
-
-        openai_key = os.getenv("OPENAI_API_KEY")
-        planner_runtime = AgentRuntime(agent=planner, openai_api_key=openai_key)
-        executor_runtime = AgentRuntime(agent=executor, openai_api_key=openai_key)
-        reviewer_runtime = AgentRuntime(agent=reviewer, openai_api_key=openai_key)
-
-        planner_runtime.set_tools(tools)
-        executor_runtime.set_tools(tools)
-        reviewer_runtime.set_tools(tools)
 
         memory_kwargs = {
             "agent_id": f"genxbot_{run_id}",
@@ -533,21 +528,82 @@ class GenXBotOrchestrator:
             memory_kwargs.pop("redis_client", None)
             memory_kwargs.pop("graph_db", None)
             memory = MemorySystem(**memory_kwargs)
-        planner_runtime.set_memory(memory)
-        executor_runtime.set_memory(memory)
-        reviewer_runtime.set_memory(memory)
+
+        workflow_nodes = [
+            {"id": "start", "type": "input", "config": {}},
+            {
+                "id": planner_id,
+                "type": "agent",
+                "config": {
+                    "role": "Codebase Planner",
+                    "goal": "Produce safe, testable coding plans from user goals",
+                    "tools": enabled_tools,
+                    "llm_model": "gpt-4",
+                    "temperature": 0.3,
+                },
+            },
+            {
+                "id": executor_id,
+                "type": "agent",
+                "config": {
+                    "role": "Code Executor",
+                    "goal": "Propose and execute coding actions safely",
+                    "tools": enabled_tools,
+                    "llm_model": "gpt-4",
+                    "temperature": 0.2,
+                },
+            },
+            {
+                "id": reviewer_id,
+                "type": "agent",
+                "config": {
+                    "role": "Code Reviewer",
+                    "goal": "Review plans and actions for safety and quality",
+                    "tools": enabled_tools,
+                    "llm_model": "gpt-4",
+                    "temperature": 0.2,
+                },
+            },
+            {"id": "end", "type": "output", "config": {}},
+        ]
+        workflow_edges = [
+            {"source": "start", "target": planner_id},
+            {"source": planner_id, "target": executor_id},
+            {"source": executor_id, "target": reviewer_id},
+            {"source": reviewer_id, "target": "end"},
+        ]
+
+        workflow_executor = WorkflowExecutor(
+            openai_api_key=os.getenv("OPENAI_API_KEY"),
+            anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        )
 
         return {
-            "planner": planner,
-            "executor": executor,
-            "reviewer": reviewer,
-            "planner_runtime": planner_runtime,
-            "executor_runtime": executor_runtime,
-            "reviewer_runtime": reviewer_runtime,
             "memory": memory,
             "tools": tools,
             "goal": goal,
+            "planner_id": planner_id,
+            "executor_id": executor_id,
+            "reviewer_id": reviewer_id,
+            "workflow_nodes": workflow_nodes,
+            "workflow_edges": workflow_edges,
+            "workflow_executor": workflow_executor,
         }
+
+    @staticmethod
+    def _extract_output_text(payload: Any) -> str:
+        if payload is None:
+            return ""
+        if isinstance(payload, str):
+            return payload
+        if isinstance(payload, dict):
+            output = payload.get("output")
+            if isinstance(output, str):
+                return output
+            if output is not None:
+                return str(output)
+            return str(payload)
+        return str(payload)
 
     async def _run_genxai_pipeline(
         self,
@@ -557,51 +613,36 @@ class GenXBotOrchestrator:
         context: str | None,
     ) -> dict[str, Any]:
         stack = self._genxai_runtime_ctx[run_id]
-        planner_runtime: AgentRuntime = stack["planner_runtime"]
-        executor_runtime: AgentRuntime = stack["executor_runtime"]
-        reviewer_runtime: AgentRuntime = stack["reviewer_runtime"]
 
-        planner_task = (
-            "Create a concise execution plan for the coding goal. "
-            "Return bullet points with repo analysis, code edits, and tests."
-        )
-        planner_result = await planner_runtime.execute(
-            task=planner_task,
-            context={"goal": goal, "repo_path": repo_path, "context": context or ""},
-        )
-        plan_text = planner_result.get("output", "")
-
-        executor_task = (
-            "Given the plan, propose two actions in plain text: one command and one edit. "
-            "Prefer safe test/lint command first."
-        )
-        executor_result = await executor_runtime.execute(
-            task=executor_task,
-            context={
+        workflow_executor: WorkflowExecutor = stack["workflow_executor"]
+        workflow_result = await workflow_executor.execute(
+            nodes=stack["workflow_nodes"],
+            edges=stack["workflow_edges"],
+            input_data={
                 "goal": goal,
                 "repo_path": repo_path,
-                "plan": plan_text,
+                "context": context or "",
+                "task": (
+                    "Create a concise coding plan, propose safe command/edit actions, "
+                    "then review for risks and improvements."
+                ),
             },
         )
+        if workflow_result.get("status") != "success":
+            raise RuntimeError(workflow_result.get("error") or "WorkflowExecutor failed")
 
-        review_flow = CriticReviewFlow(
-            agents=[stack["executor"], stack["reviewer"]],
-            max_iterations=1,
-        )
-        review_state = await review_flow.run(
-            input_data={"goal": goal, "repo_path": repo_path},
-            state={
-                "task": "Review the proposed coding approach for risks and completeness.",
-                "critic_task": "Provide concrete risk feedback and improvements.",
-                "accept": True,
-            },
-            max_iterations=5,
-        )
+        workflow_state = workflow_result.get("result", {})
+        node_results = workflow_state.get("node_results", {}) if isinstance(workflow_state, dict) else {}
+
+        planner_output = node_results.get(stack["planner_id"], {}).get("output")
+        executor_output = node_results.get(stack["executor_id"], {}).get("output")
+        reviewer_output = node_results.get(stack["reviewer_id"], {}).get("output")
 
         return {
-            "plan_text": plan_text,
-            "executor_output": executor_result.get("output", ""),
-            "review": review_state.get("last_critique", {}),
+            "plan_text": self._extract_output_text(planner_output),
+            "executor_output": self._extract_output_text(executor_output),
+            "review": reviewer_output or {},
+            "node_events": workflow_result.get("node_events", []),
         }
 
     def create_run(self, request: RunTaskRequest) -> RunSession:
@@ -694,7 +735,7 @@ class GenXBotOrchestrator:
                     TimelineEvent(
                         agent="genxai_runtime",
                         event="pipeline_executed",
-                        content="Planner/executor/reviewer pipeline completed with live LLM runtime.",
+                        content="WorkflowExecutor pipeline completed with live LLM runtime.",
                     )
                 )
             except Exception as exc:
@@ -795,7 +836,7 @@ class GenXBotOrchestrator:
 
         run.memory_summary = (
             "GenXAI memory initialized for this run. "
-            "Planner/executor/reviewer context is tracked via MemorySystem."
+            "Workflow orchestration is executed via GenXAI WorkflowExecutor."
         )
         run.updated_at = _now()
         return self._store.create(run)

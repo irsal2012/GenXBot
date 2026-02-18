@@ -627,7 +627,11 @@ def ingest_channel_event(
         user_id=normalized.user_id,
     )
     command, args = parse_channel_command(normalized.text)
-    intent = _classify_channel_intent(normalized.text) if command is None else _INTENT_COMMAND
+    intent = (
+        _classify_channel_intent(normalized.text)
+        if command is None and normalized.channel == "web"
+        else _INTENT_COMMAND
+    )
     observed_command = command or ("chat" if intent == _INTENT_CHAT else "run")
     _channel_observability.record_inbound(
         channel=normalized.channel,
