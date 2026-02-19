@@ -18,6 +18,8 @@ class RunTaskRequest(BaseModel):
     repo_path: str = Field(..., min_length=1)
     context: Optional[str] = None
     requested_by: str = "anonymous"
+    skill_id: Optional[str] = None
+    skill_inputs: dict[str, str] = Field(default_factory=dict)
     recipe_id: Optional[str] = None
     recipe_inputs: dict[str, str] = Field(default_factory=dict)
     recipe_actions: list["RecipeActionTemplate"] = Field(default_factory=list)
@@ -54,6 +56,37 @@ class RecipeCreateRequest(BaseModel):
 
 class RecipeListResponse(BaseModel):
     recipes: list[RecipeDefinition] = Field(default_factory=list)
+
+
+class SkillDefinition(BaseModel):
+    id: str
+    name: str
+    description: str
+    goal_template: str
+    context_template: Optional[str] = None
+    recipe_id: Optional[str] = None
+    trigger_phrases: list[str] = Field(default_factory=list)
+    tool_allowlist: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    action_templates: list[RecipeActionTemplate] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class SkillCreateRequest(BaseModel):
+    id: str = Field(..., min_length=2)
+    name: str = Field(..., min_length=2)
+    description: str = ""
+    goal_template: str = Field(..., min_length=3)
+    context_template: Optional[str] = None
+    recipe_id: Optional[str] = None
+    trigger_phrases: list[str] = Field(default_factory=list)
+    tool_allowlist: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    action_templates: list[RecipeActionTemplate] = Field(default_factory=list)
+
+
+class SkillListResponse(BaseModel):
+    skills: list[SkillDefinition] = Field(default_factory=list)
 
 
 class ConnectorTriggerRequest(BaseModel):

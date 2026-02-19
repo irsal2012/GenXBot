@@ -623,6 +623,82 @@ def test_web_stock_price_request_includes_site_suggestions(tmp_path: Path) -> No
         runs_routes._orchestrator = original_orchestrator
 
 
+def test_web_stock_price_request_prefers_live_search_results(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    original_search_web_sites = runs_routes._search_web_sites
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._search_web_sites = lambda query, limit=4: [
+        ("Live Yahoo Finance", "https://finance.yahoo.com"),
+        ("Live Google Finance", "https://www.google.com/finance"),
+    ]
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-stock-live",
+                    "channel_id": "web-main",
+                    "text": "Find me the site that I can look at stock prices.",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "Useful stock-price sites (live search)" in body["outbound_text"]
+        assert "Live Yahoo Finance" in body["outbound_text"]
+        assert "Live Google Finance" in body["outbound_text"]
+    finally:
+        runs_routes._search_web_sites = original_search_web_sites
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_web_stock_price_request_falls_back_when_live_search_empty(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    original_search_web_sites = runs_routes._search_web_sites
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._search_web_sites = lambda query, limit=4: []
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-stock-fallback",
+                    "channel_id": "web-main",
+                    "text": "Find me the site that I can look at stock prices.",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "Useful stock-price sites:" in body["outbound_text"]
+        assert "https://finance.yahoo.com" in body["outbound_text"]
+    finally:
+        runs_routes._search_web_sites = original_search_web_sites
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
 def test_web_channel_small_talk_stays_chat_mode(tmp_path: Path) -> None:
     orchestrator = build_orchestrator()
 
@@ -2147,6 +2223,92 @@ def test_recipes_endpoints_list_get_create() -> None:
     finally:
         runs_routes._recipes.clear()
         runs_routes._recipes.update(original_recipes)
+
+
+def test_skills_endpoints_list_get_create() -> None:
+    original_skills = dict(runs_routes._skills)
+    try:
+        client = TestClient(create_app())
+
+        listed = client.get("/api/v1/runs/skills")
+        assert listed.status_code == 200
+        assert "skills" in listed.json()
+        assert any(s["id"] == "market-research" for s in listed.json()["skills"])
+
+        fetched = client.get("/api/v1/runs/skills/market-research")
+        assert fetched.status_code == 200
+        assert fetched.json()["id"] == "market-research"
+
+        created = client.post(
+            "/api/v1/runs/skills",
+            json={
+                "id": "docs-skill",
+                "name": "Docs Skill",
+                "description": "Help with docs tasks",
+                "goal_template": "Draft docs for {topic}",
+                "trigger_phrases": ["docs", "documentation"],
+                "tool_allowlist": ["api_caller"],
+                "tags": ["docs"],
+            },
+        )
+        assert created.status_code == 200
+        assert created.json()["id"] == "docs-skill"
+
+        fetched_new = client.get("/api/v1/runs/skills/docs-skill")
+        assert fetched_new.status_code == 200
+        assert fetched_new.json()["name"] == "Docs Skill"
+    finally:
+        runs_routes._skills.clear()
+        runs_routes._skills.update(original_skills)
+
+
+def test_create_run_with_explicit_skill_renders_goal_and_context(tmp_path: Path) -> None:
+    original_orchestrator = runs_routes._orchestrator
+    original_skills = dict(runs_routes._skills)
+    runs_routes._orchestrator = build_orchestrator()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "goal": "placeholder",
+                "repo_path": str(tmp_path),
+                "skill_id": "market-research",
+                "skill_inputs": {},
+                "requested_by": "skill-user",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["goal"] == "Find reliable websites for market and stock information, then summarize useful links"
+        assert payload["id"].startswith("run_")
+    finally:
+        runs_routes._skills.clear()
+        runs_routes._skills.update(original_skills)
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_create_run_auto_routes_skill_from_goal(tmp_path: Path) -> None:
+    original_orchestrator = runs_routes._orchestrator
+    original_skills = dict(runs_routes._skills)
+    runs_routes._orchestrator = build_orchestrator()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs",
+            json={
+                "goal": "Find me sites for stock prices",
+                "repo_path": str(tmp_path),
+                "requested_by": "skill-auto-user",
+            },
+        )
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["goal"] == "Find reliable websites for market and stock information, then summarize useful links"
+    finally:
+        runs_routes._skills.clear()
+        runs_routes._skills.update(original_skills)
+        runs_routes._orchestrator = original_orchestrator
 
 
 def test_create_run_with_recipe_renders_goal_and_context(tmp_path: Path) -> None:

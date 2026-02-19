@@ -6,9 +6,13 @@ import json
 import os
 import re
 import time
+import asyncio
+from html import unescape
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+import httpx
 from openai import OpenAI
 
 from app.config import get_settings
@@ -43,8 +47,13 @@ from app.schemas import (
     RecipeCreateRequest,
     RecipeDefinition,
     RecipeListResponse,
+    SkillCreateRequest,
+    SkillDefinition,
+    SkillListResponse,
     RunSession,
     RunTaskRequest,
+    TimelineEvent,
+    Artifact,
 )
 from app.services.channels import parse_channel_event
 from app.services.channels import parse_channel_command
@@ -182,6 +191,24 @@ def _load_default_recipes_from_files() -> dict[str, RecipeDefinition]:
 _recipes: dict[str, RecipeDefinition] = _load_default_recipes_from_files()
 
 
+def _load_default_skills() -> dict[str, SkillDefinition]:
+    skill = SkillDefinition(
+        id="market-research",
+        name="Market Research",
+        description="Find reliable market/stock information sources for user questions",
+        goal_template="Find reliable websites for market and stock information, then summarize useful links",
+        context_template="focus=web_research",
+        trigger_phrases=["stock price", "stock prices", "market research"],
+        tool_allowlist=["api_caller", "web_scraper", "http_client"],
+        tags=["research", "web"],
+        enabled=True,
+    )
+    return {skill.id: skill}
+
+
+_skills: dict[str, SkillDefinition] = _load_default_skills()
+
+
 def _render_template(template: str | None, values: dict[str, str]) -> str | None:
     if template is None:
         return None
@@ -235,6 +262,118 @@ def _resolve_recipe_request(request: RunTaskRequest) -> RunTaskRequest:
             "recipe_actions": rendered_actions,
         }
     )
+
+
+def _route_skill_from_goal(request: RunTaskRequest) -> RunTaskRequest:
+    if request.skill_id:
+        return request
+
+    goal = (request.goal or "").strip().lower()
+    if not goal:
+        return request
+
+    for skill in _skills.values():
+        if not skill.enabled:
+            continue
+        phrases = [p.strip().lower() for p in skill.trigger_phrases if p.strip()]
+        if any(phrase in goal for phrase in phrases):
+            return request.model_copy(update={"skill_id": skill.id})
+    return request
+
+
+def _resolve_skill_request(request: RunTaskRequest) -> RunTaskRequest:
+    if not request.skill_id:
+        return request
+
+    skill = _skills.get(request.skill_id)
+    if not skill or not skill.enabled:
+        raise HTTPException(status_code=404, detail=f"Skill not found: {request.skill_id}")
+
+    render_values = {
+        **request.skill_inputs,
+        "skill_id": skill.id,
+        "skill_name": skill.name,
+    }
+    rendered_goal = _render_template(skill.goal_template, render_values) or request.goal
+    rendered_context = _render_template(skill.context_template, render_values)
+    rendered_actions = _render_recipe_actions(skill.action_templates, render_values)
+    merged_context = "\n".join(v for v in [request.context, rendered_context] if v)
+
+    update: dict[str, object] = {
+        "goal": rendered_goal,
+        "context": merged_context or None,
+    }
+    if rendered_actions:
+        update["recipe_actions"] = rendered_actions
+    if skill.recipe_id and not request.recipe_id:
+        update["recipe_id"] = skill.recipe_id
+
+    return request.model_copy(update=update)
+
+
+def _prepare_resolved_run_request(request: RunTaskRequest) -> RunTaskRequest:
+    routed = _route_skill_from_goal(request)
+    skilled = _resolve_skill_request(routed)
+    return _resolve_recipe_request(skilled)
+
+
+def _create_channel_run(
+    *,
+    orchestrator: GenXBotOrchestrator,
+    normalized,
+    run_goal: str,
+    default_repo_path: str | None,
+) -> RunSession:
+    repo_path = default_repo_path or "."
+    context_parts = [
+        f"Channel: {normalized.channel}",
+        f"Event type: {normalized.event_type}",
+        f"User ID: {normalized.user_id}",
+        f"Channel ID: {normalized.channel_id}",
+        f"Message: {normalized.text}",
+    ]
+    if normalized.thread_id:
+        context_parts.append(f"Thread ID: {normalized.thread_id}")
+    if normalized.message_id:
+        context_parts.append(f"Message ID: {normalized.message_id}")
+
+    resolved_request = _prepare_resolved_run_request(
+        RunTaskRequest(
+            goal=run_goal,
+            repo_path=repo_path,
+            context="\n".join(context_parts),
+            requested_by=f"{normalized.channel}:{normalized.user_id}",
+        )
+    )
+    run = orchestrator.create_run(resolved_request)
+    run.timeline.append(
+        TimelineEvent(
+            agent="channel_adapter",
+            event="channel_message_received",
+            content=(
+                f"{normalized.channel}:{normalized.event_type} accepted for user {normalized.user_id} "
+                f"in channel {normalized.channel_id}; mapped to run {run.id}"
+            ),
+        )
+    )
+    run.artifacts.append(
+        Artifact(
+            kind="summary",
+            title=f"Inbound {normalized.channel} message",
+            content=normalized.text,
+        )
+    )
+    if hasattr(orchestrator, "_add_audit"):
+        orchestrator._add_audit(
+            run,
+            actor=f"{normalized.channel}:{normalized.user_id}",
+            actor_role="executor",
+            action="channel_event",
+            detail=f"Inbound {normalized.channel} event {normalized.event_type} created run.",
+        )
+    if hasattr(orchestrator, "_store"):
+        run = orchestrator._store.update(run)
+    return run
 
 
 def _send_outbound(
@@ -412,6 +551,14 @@ def _site_suggestions_for_query(text: str) -> str | None:
         return None
 
     if "stock" in cleaned and ("price" in cleaned or "prices" in cleaned):
+        query = text.strip()
+        live_results = _search_web_sites(query)
+        if live_results:
+            lines = ["Useful stock-price sites (live search):"]
+            for title, url in live_results:
+                lines.append(f"- {title}: {url}")
+            return "\n".join(lines)
+
         return (
             "Useful stock-price sites:\n"
             "- Yahoo Finance: https://finance.yahoo.com\n"
@@ -420,6 +567,105 @@ def _site_suggestions_for_query(text: str) -> str | None:
             "- Investing.com: https://www.investing.com"
         )
 
+    return None
+
+
+def _search_web_sites(query: str, limit: int = 4) -> list[tuple[str, str]]:
+    genx_results = _search_web_sites_with_genxai_tool(query=query, limit=limit)
+    if genx_results:
+        return genx_results
+
+    try:
+        response = httpx.get(
+            "https://duckduckgo.com/html/",
+            params={"q": query},
+            timeout=2.0,
+            follow_redirects=True,
+            headers={"User-Agent": "GenXBot/1.0"},
+        )
+        response.raise_for_status()
+    except Exception:
+        return []
+
+    return _parse_search_results_from_html(response.text, limit=limit)
+
+
+def _search_web_sites_with_genxai_tool(query: str, limit: int = 4) -> list[tuple[str, str]]:
+    try:
+        tools = _orchestrator._tool_map()
+        api_caller = tools.get("api_caller")
+        if not api_caller:
+            return []
+
+        async def _run() -> object:
+            return await api_caller.execute(
+                method="GET",
+                url="https://duckduckgo.com/html/",
+                params={"q": query},
+                timeout=5,
+                follow_redirects=True,
+            )
+
+        try:
+            running_loop = asyncio.get_running_loop()
+            if running_loop.is_running():
+                return []
+        except RuntimeError:
+            pass
+
+        result = asyncio.run(_run())
+        payload = result.model_dump() if hasattr(result, "model_dump") else {}
+        if not payload.get("success"):
+            return []
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        html = data.get("data", "") if isinstance(data, dict) else ""
+        if not isinstance(html, str) or not html:
+            return []
+
+        if "anomaly-modal" in html.lower() or "bots use duckduckgo" in html.lower():
+            return []
+
+        return _parse_search_results_from_html(html, limit=limit)
+    except Exception:
+        return []
+
+
+def _parse_search_results_from_html(html: str, limit: int = 4) -> list[tuple[str, str]]:
+    matches = re.findall(
+        r'<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    results: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for href, raw_title in matches:
+        url = _extract_final_url(href)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        title = re.sub(r"<[^>]+>", "", raw_title)
+        title = unescape(re.sub(r"\s+", " ", title)).strip() or url
+        results.append((title, url))
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+def _extract_final_url(href: str) -> str | None:
+    href = unescape(href)
+    if href.startswith("/l/?"):
+        parsed = urlparse(href)
+        q = parse_qs(parsed.query)
+        encoded = (q.get("uddg") or [""])[0]
+        final_url = unquote(encoded)
+    else:
+        final_url = href
+
+    if final_url.startswith("http://") or final_url.startswith("https://"):
+        return final_url
     return None
 
 router = APIRouter(
@@ -439,7 +685,7 @@ def create_run(
     orchestrator: GenXBotOrchestrator = Depends(get_orchestrator),
 ) -> RunSession:
     try:
-        return orchestrator.create_run(_resolve_recipe_request(request))
+        return orchestrator.create_run(_prepare_resolved_run_request(request))
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -479,6 +725,39 @@ def create_recipe(request: RecipeCreateRequest, raw_request: Request) -> RecipeD
     )
     _recipes[recipe.id] = recipe
     return recipe
+
+
+@router.get("/skills", response_model=SkillListResponse)
+def list_skills() -> SkillListResponse:
+    return SkillListResponse(skills=sorted(_skills.values(), key=lambda s: s.id))
+
+
+@router.get("/skills/{skill_id}", response_model=SkillDefinition)
+def get_skill(skill_id: str) -> SkillDefinition:
+    skill = _skills.get(skill_id)
+    if not skill:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return skill
+
+
+@router.post("/skills", response_model=SkillDefinition)
+def create_skill(request: SkillCreateRequest, raw_request: Request) -> SkillDefinition:
+    _admin_authz.require(raw_request, minimum_role="admin")
+    skill = SkillDefinition(
+        id=request.id.strip(),
+        name=request.name.strip(),
+        description=request.description.strip(),
+        goal_template=request.goal_template,
+        context_template=request.context_template,
+        recipe_id=(request.recipe_id or "").strip() or None,
+        trigger_phrases=[v.strip() for v in request.trigger_phrases if v.strip()],
+        tool_allowlist=[v.strip() for v in request.tool_allowlist if v.strip()],
+        tags=[v.strip() for v in request.tags if v.strip()],
+        action_templates=request.action_templates,
+        enabled=True,
+    )
+    _skills[skill.id] = skill
+    return skill
 
 
 @router.get("", response_model=list[RunSession])
@@ -1125,8 +1404,10 @@ def ingest_channel_event(
         ))
 
     run_goal = args if command == "run" and args else normalized.text
-    run = orchestrator.create_run_from_channel_event(
-        normalized.model_copy(update={"text": run_goal}),
+    run = _create_channel_run(
+        orchestrator=orchestrator,
+        normalized=normalized,
+        run_goal=run_goal,
         default_repo_path=request.default_repo_path,
     )
     _channel_sessions.attach_run(session_key, run.id)
