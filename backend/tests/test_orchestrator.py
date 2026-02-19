@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.schemas import ApprovalRequest, RerunFailedStepRequest, RunTaskRequest
+from app.services.channels import parse_channel_command
 from app.services.orchestrator import GenXBotOrchestrator
 import app.api.routes_runs as runs_routes
 from app.services.policy import SafetyPolicy
@@ -26,6 +27,13 @@ def approver_request(action_id: str, approve: bool, comment: str = "") -> Approv
         actor="tester",
         actor_role="approver",
     )
+
+
+def test_parse_channel_command_supports_yes_no_aliases() -> None:
+    assert parse_channel_command("yes") == ("approve", "")
+    assert parse_channel_command("Y") == ("approve", "")
+    assert parse_channel_command("no") == ("reject", "")
+    assert parse_channel_command("n") == ("reject", "")
 
 
 def test_create_run_generates_plan_and_pending_actions(tmp_path: Path) -> None:
@@ -846,6 +854,245 @@ def test_channel_approve_command_changes_action_status(tmp_path: Path) -> None:
         assert approve.status_code == 200
         assert approve.json()["command"] == "approve"
         assert "Action approved" in approve.json()["outbound_text"]
+    finally:
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._channel_trust = original_channel_trust
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_channel_yes_alias_auto_approves_single_pending_action(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_channel_trust = runs_routes._channel_trust
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+    from app.services.channel_trust import ChannelTrustService
+
+    runs_routes._channel_trust = ChannelTrustService()
+    runs_routes._channel_trust.set_policy("slack", dm_policy="open", allow_from=[])
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        created = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-YES",
+                        "channel": "C-YES",
+                        "text": "/run build tests",
+                    }
+                },
+            },
+        )
+        assert created.status_code == 200
+        run_id = created.json()["run"]["id"]
+
+        stored = orchestrator.get_run(run_id)
+        assert stored is not None
+        assert stored.pending_actions
+        for action in stored.pending_actions[1:]:
+            action.status = "rejected"
+
+        approve = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-YES",
+                        "channel": "C-YES",
+                        "text": "yes",
+                    }
+                },
+            },
+        )
+        assert approve.status_code == 200
+        assert approve.json()["command"] == "approve"
+        assert "Action approved" in approve.json()["outbound_text"]
+    finally:
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._channel_trust = original_channel_trust
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_channel_no_alias_rejects_single_pending_action(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_channel_trust = runs_routes._channel_trust
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+    from app.services.channel_trust import ChannelTrustService
+
+    runs_routes._channel_trust = ChannelTrustService()
+    runs_routes._channel_trust.set_policy("slack", dm_policy="open", allow_from=[])
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        created = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-NO",
+                        "channel": "C-NO",
+                        "text": "/run build tests",
+                    }
+                },
+            },
+        )
+        assert created.status_code == 200
+        run_id = created.json()["run"]["id"]
+
+        stored = orchestrator.get_run(run_id)
+        assert stored is not None
+        assert stored.pending_actions
+        for action in stored.pending_actions[1:]:
+            action.status = "rejected"
+
+        reject = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-NO",
+                        "channel": "C-NO",
+                        "text": "no",
+                    }
+                },
+            },
+        )
+        assert reject.status_code == 200
+        assert reject.json()["command"] == "reject"
+        assert "Action rejected" in reject.json()["outbound_text"]
+    finally:
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._channel_trust = original_channel_trust
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_channel_yes_alias_requires_action_id_when_multiple_pending(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_channel_trust = runs_routes._channel_trust
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+    from app.services.channel_trust import ChannelTrustService
+
+    runs_routes._channel_trust = ChannelTrustService()
+    runs_routes._channel_trust.set_policy("slack", dm_policy="open", allow_from=[])
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        created = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-MULTI",
+                        "channel": "C-MULTI",
+                        "text": "/run build tests",
+                    }
+                },
+            },
+        )
+        assert created.status_code == 200
+        run_id = created.json()["run"]["id"]
+        stored = orchestrator.get_run(run_id)
+        assert stored is not None
+        assert stored.pending_actions
+
+        if len(stored.pending_actions) < 2:
+            duplicate = stored.pending_actions[0].model_copy(
+                update={"id": f"{stored.pending_actions[0].id}_dup", "status": "pending"}
+            )
+            stored.pending_actions.append(duplicate)
+        else:
+            stored.pending_actions[0].status = "pending"
+            stored.pending_actions[1].status = "pending"
+
+        ambiguous = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-MULTI",
+                        "channel": "C-MULTI",
+                        "text": "yes",
+                    }
+                },
+            },
+        )
+        assert ambiguous.status_code == 200
+        assert "Multiple pending actions found" in ambiguous.json()["outbound_text"]
+    finally:
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._channel_trust = original_channel_trust
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_channel_yes_alias_requires_run_context(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_channel_trust = runs_routes._channel_trust
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+    from app.services.channel_trust import ChannelTrustService
+
+    runs_routes._channel_trust = ChannelTrustService()
+    runs_routes._channel_trust.set_policy("slack", dm_policy="open", allow_from=[])
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/slack",
+            json={
+                "channel": "slack",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "event": {
+                        "type": "message",
+                        "user": "U-NOCONTEXT",
+                        "channel": "C-NOCONTEXT",
+                        "text": "yes",
+                    }
+                },
+            },
+        )
+        assert response.status_code == 200
+        assert "No run context found" in response.json()["outbound_text"]
     finally:
         runs_routes._channel_sessions = original_sessions
         runs_routes._channel_trust = original_channel_trust

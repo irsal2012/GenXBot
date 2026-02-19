@@ -349,6 +349,10 @@ def _heuristic_intent(text: str) -> str:
     return _INTENT_CHAT
 
 
+def _is_approval_alias(text: str) -> bool:
+    return (text or "").strip().lower() in {"yes", "y", "no", "n"}
+
+
 def _classify_channel_intent(text: str) -> str:
     api_key = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -840,29 +844,133 @@ def ingest_channel_event(
                 trace_id=trace_id,
             ))
 
+        action_id: str | None = None
+        run_id: str | None = None
         if not parts:
-            outbound_text = "Usage: /approve <action_id> [run_id] or /reject <action_id> [run_id]"
-            delivery = (
-                "direct:web"
-                if normalized.channel == "web"
-                else _send_outbound(
-                    channel=normalized.channel,
-                    channel_id=normalized.channel_id,
-                    thread_id=normalized.thread_id,
-                    text=outbound_text,
+            if not _is_approval_alias(normalized.text):
+                outbound_text = "Usage: /approve <action_id> [run_id] or /reject <action_id> [run_id]"
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
                 )
-            )
-            return _cache_channel_response(idempotency_token, ChannelInboundResponse(
-                channel=request.channel,
-                event_type=request.event_type,
-                command=command,
-                outbound_text=outbound_text,
-                outbound_delivery=delivery,
-                session_key=session_key,
-                trace_id=trace_id,
-            ))
-        action_id = parts[0]
-        run_id = parts[1] if len(parts) > 1 else _channel_sessions.get_latest_run(session_key)
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            run_id = _channel_sessions.get_latest_run(session_key)
+            if not run_id:
+                outbound_text = "No run context found. Provide run_id or start with /run <goal>."
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            prior_run = orchestrator.get_run(run_id)
+            if not prior_run:
+                outbound_text = f"Run {run_id} not found."
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            pending = [a for a in prior_run.pending_actions if a.status == "pending"]
+            if len(pending) == 0:
+                outbound_text = (
+                    f"Run {prior_run.id} has no pending actions. Use /status {prior_run.id} for details."
+                )
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            if len(pending) > 1:
+                outbound_text = (
+                    "Multiple pending actions found. "
+                    "Use /approve <action_id> [run_id] or /reject <action_id> [run_id]."
+                )
+                delivery = (
+                    "direct:web"
+                    if normalized.channel == "web"
+                    else _send_outbound(
+                        channel=normalized.channel,
+                        channel_id=normalized.channel_id,
+                        thread_id=normalized.thread_id,
+                        text=outbound_text,
+                    )
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery=delivery,
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            action_id = pending[0].id
+        else:
+            action_id = parts[0]
+            run_id = parts[1] if len(parts) > 1 else _channel_sessions.get_latest_run(session_key)
+
+        assert action_id is not None
         if not run_id:
             outbound_text = "No run context found. Provide run_id or start with /run <goal>."
             delivery = (

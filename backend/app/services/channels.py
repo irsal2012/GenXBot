@@ -85,6 +85,14 @@ def parse_channel_command(text: str) -> tuple[Optional[str], str]:
     Returns (command, args). If no recognized command, command is None.
     """
     cleaned = (text or "").strip()
+    lowered = cleaned.lower()
+
+    # Natural-language aliases for quick approvals in chat UX.
+    if lowered in {"yes", "y"}:
+        return "approve", ""
+    if lowered in {"no", "n"}:
+        return "reject", ""
+
     if not cleaned.startswith("/"):
         return None, cleaned
 
