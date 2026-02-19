@@ -554,6 +554,78 @@ def test_channel_mismatch_returns_400(tmp_path: Path) -> None:
         runs_routes._orchestrator = original_orchestrator
 
 
+def test_web_channel_natural_language_defaults_to_run(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-1",
+                    "channel_id": "web-main",
+                    "text": "build a todo app with auth and tests",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["command"] == "run"
+        assert body["run"]["id"].startswith("run_")
+        assert body["response_mode"] is None
+    finally:
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_web_channel_small_talk_stays_chat_mode(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    original_generate_chat_response = runs_routes._generate_chat_response
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._channel_sessions = ChannelSessionService()
+    runs_routes._generate_chat_response = lambda text: ("hello 👋", "fallback")
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-2",
+                    "channel_id": "web-main",
+                    "text": "hello",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["command"] == "chat"
+        assert body["run"] is None
+        assert body["response_mode"] == "fallback"
+        assert body["outbound_text"] == "hello 👋"
+    finally:
+        runs_routes._generate_chat_response = original_generate_chat_response
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
 def test_unpaired_channel_sender_returns_403_with_pairing_code(tmp_path: Path) -> None:
     orchestrator = build_orchestrator()
 

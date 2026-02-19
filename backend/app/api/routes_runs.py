@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 
@@ -322,31 +323,39 @@ def _get_maintenance(channel: str) -> ChannelMaintenanceMode:
     return _channel_maintenance[key]
 
 
-def _heuristic_intent(text: str) -> str:
-    lowered = (text or "").lower()
-    command_keywords = [
-        "run",
-        "test",
-        "fix",
-        "build",
-        "deploy",
-        "implement",
-        "refactor",
-        "add",
-        "update",
-        "create",
-        "generate",
-        "bug",
-        "feature",
-        "lint",
-        "ci",
-        "pipeline",
-    ]
-    if lowered.strip().startswith("/"):
-        return _INTENT_COMMAND
-    if any(keyword in lowered for keyword in command_keywords):
-        return _INTENT_COMMAND
-    return _INTENT_CHAT
+def _is_chat_only_message(text: str) -> bool:
+    cleaned = re.sub(r"[^a-z0-9\s?]", " ", (text or "").strip().lower())
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not cleaned:
+        return True
+
+    exact_small_talk = {
+        "hi",
+        "hello",
+        "hey",
+        "yo",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "how are you",
+        "thanks",
+        "thank you",
+        "ok thanks",
+        "cool thanks",
+        "bye",
+        "goodbye",
+        "help",
+    }
+    if cleaned in exact_small_talk:
+        return True
+
+    chat_patterns = (
+        r"^(what model( are you using)?\??)$",
+        r"^(who are you\??)$",
+        r"^(what can you do\??)$",
+        r"^(can you help me\??)$",
+    )
+    return any(re.fullmatch(pattern, cleaned) for pattern in chat_patterns)
 
 
 def _is_approval_alias(text: str) -> bool:
@@ -354,34 +363,10 @@ def _is_approval_alias(text: str) -> bool:
 
 
 def _classify_channel_intent(text: str) -> str:
-    api_key = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return _heuristic_intent(text)
-
-    try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You classify user messages for a coding assistant. "
-                        "Return only one token: 'command' if the message should start a coding run, "
-                        "or 'chat' if it's conversational small talk or unrelated to code execution."
-                    ),
-                },
-                {"role": "user", "content": text},
-            ],
-            temperature=0,
-        )
-        intent = response.choices[0].message.content.strip().lower()
-        if intent in {_INTENT_COMMAND, _INTENT_CHAT}:
-            return intent
-    except Exception:
-        return _heuristic_intent(text)
-
-    return _heuristic_intent(text)
+    # OpenClaw-like behavior: default to command intent unless message is clearly small-talk/meta.
+    if _is_chat_only_message(text):
+        return _INTENT_CHAT
+    return _INTENT_COMMAND
 
 
 def _generate_chat_response(text: str) -> tuple[str, str]:
