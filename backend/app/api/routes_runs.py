@@ -405,6 +405,23 @@ def _generate_chat_response(text: str) -> tuple[str, str]:
             "fallback",
         )
 
+
+def _site_suggestions_for_query(text: str) -> str | None:
+    cleaned = (text or "").strip().lower()
+    if not cleaned:
+        return None
+
+    if "stock" in cleaned and ("price" in cleaned or "prices" in cleaned):
+        return (
+            "Useful stock-price sites:\n"
+            "- Yahoo Finance: https://finance.yahoo.com\n"
+            "- Google Finance: https://www.google.com/finance\n"
+            "- TradingView: https://www.tradingview.com\n"
+            "- Investing.com: https://www.investing.com"
+        )
+
+    return None
+
 router = APIRouter(
     prefix="/runs",
     tags=["runs"],
@@ -744,6 +761,82 @@ def ingest_channel_event(
             ))
 
         parts = args.split()
+
+        # Web conversational confirmation: after run creation prompt asks
+        # "Approve all actions now? (yes/no)".
+        if normalized.channel == "web" and not parts and _is_approval_alias(normalized.text):
+            run_id = _channel_sessions.get_latest_run(session_key)
+            if not run_id:
+                outbound_text = "No run context found. Start with a request first, then answer yes/no."
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery="direct:web",
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            run = orchestrator.get_run(run_id)
+            if not run:
+                outbound_text = f"Run {run_id} not found."
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery="direct:web",
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            if command == "reject":
+                outbound_text = (
+                    f"Okay — not approving all actions for run {run.id}. "
+                    "Use /status to review and approve/reject manually."
+                )
+                return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                    channel=request.channel,
+                    event_type=request.event_type,
+                    run=run,
+                    command=command,
+                    outbound_text=outbound_text,
+                    outbound_delivery="direct:web",
+                    session_key=session_key,
+                    trace_id=trace_id,
+                ))
+
+            approved_count = 0
+            for action in run.pending_actions:
+                if action.status != "pending":
+                    continue
+                updated = orchestrator.decide_action(
+                    run_id,
+                    ApprovalRequest(
+                        action_id=action.id,
+                        approve=True,
+                        actor=f"{normalized.channel}:{normalized.user_id}",
+                        actor_role="approver",
+                    ),
+                )
+                if updated:
+                    run = updated
+                    approved_count += 1
+            outbound_text = (
+                f"🧾 Approved {approved_count} pending action(s). Run {run.id} is now {run.status}."
+            )
+            return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+                channel=request.channel,
+                event_type=request.event_type,
+                run=run,
+                command="approve-all",
+                outbound_text=outbound_text,
+                outbound_delivery="direct:web",
+                session_key=session_key,
+                trace_id=trace_id,
+            ))
+
         if command == "approve-all":
             run_id = parts[0] if parts else _channel_sessions.get_latest_run(session_key)
             if not run_id:
@@ -1037,6 +1130,54 @@ def ingest_channel_event(
         default_repo_path=request.default_repo_path,
     )
     _channel_sessions.attach_run(session_key, run.id)
+
+    # Web natural-language action requests: auto-approve all immediately
+    # when the requester is allowed, to avoid extra confirmation friction.
+    if (
+        normalized.channel == "web"
+        and command is None
+        and not (
+            _command_approver_allowlist
+            and normalized.user_id not in _command_approver_allowlist
+        )
+    ):
+        approved_count = 0
+        for action in list(run.pending_actions):
+            if action.status != "pending":
+                continue
+            updated = orchestrator.decide_action(
+                run.id,
+                ApprovalRequest(
+                    action_id=action.id,
+                    approve=True,
+                    actor=f"{normalized.channel}:{normalized.user_id}",
+                    actor_role="approver",
+                ),
+            )
+            if updated:
+                run = updated
+                approved_count += 1
+
+        outbound_text = (
+            f"✅ Run created: {run.id}\n"
+            f"Goal: {run.goal}\n"
+            f"Auto-approved {approved_count} pending action(s).\n"
+            f"Status: {run.status}"
+        )
+        site_suggestions = _site_suggestions_for_query(run_goal)
+        if site_suggestions:
+            outbound_text = f"{outbound_text}\n\n{site_suggestions}"
+        return _cache_channel_response(idempotency_token, ChannelInboundResponse(
+            channel=request.channel,
+            event_type=request.event_type,
+            run=run,
+            command="approve-all",
+            outbound_text=outbound_text,
+            outbound_delivery="direct:web",
+            session_key=session_key,
+            trace_id=trace_id,
+        ))
+
     outbound_text = format_outbound_run_created(run)
     delivery = (
         "direct:web"

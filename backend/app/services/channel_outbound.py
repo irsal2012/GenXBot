@@ -12,7 +12,8 @@ def format_outbound_run_created(run: RunSession) -> str:
         f"✅ Run created: {run.id}\n"
         f"Goal: {run.goal}\n"
         f"Status: {run.status}\n"
-        "Use /status [run_id] to inspect and /approve or /reject to decide actions."
+        "Approve all actions now? (yes/no)\n"
+        "Reply 'yes' to approve all pending actions, or 'no' to review manually with /status."
     )
 
 

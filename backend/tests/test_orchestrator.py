@@ -554,7 +554,7 @@ def test_channel_mismatch_returns_400(tmp_path: Path) -> None:
         runs_routes._orchestrator = original_orchestrator
 
 
-def test_web_channel_natural_language_defaults_to_run(tmp_path: Path) -> None:
+def test_web_channel_natural_language_auto_approves_all(tmp_path: Path) -> None:
     orchestrator = build_orchestrator()
 
     original_orchestrator = runs_routes._orchestrator
@@ -580,9 +580,44 @@ def test_web_channel_natural_language_defaults_to_run(tmp_path: Path) -> None:
         )
         assert response.status_code == 200
         body = response.json()
-        assert body["command"] == "run"
+        assert body["command"] == "approve-all"
         assert body["run"]["id"].startswith("run_")
         assert body["response_mode"] is None
+        assert "Auto-approved" in body["outbound_text"]
+    finally:
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_web_stock_price_request_includes_site_suggestions(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-stock",
+                    "channel_id": "web-main",
+                    "text": "Find me the site that I can look at stock prices.",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["command"] == "approve-all"
+        assert "Useful stock-price sites" in body["outbound_text"]
+        assert "https://finance.yahoo.com" in body["outbound_text"]
     finally:
         runs_routes._channel_sessions = original_sessions
         runs_routes._orchestrator = original_orchestrator
@@ -622,6 +657,58 @@ def test_web_channel_small_talk_stays_chat_mode(tmp_path: Path) -> None:
         assert body["outbound_text"] == "hello 👋"
     finally:
         runs_routes._generate_chat_response = original_generate_chat_response
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_web_channel_yes_approves_all_pending_actions(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+
+        created = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-3",
+                    "channel_id": "web-main",
+                    "text": "/run create a health endpoint and tests",
+                },
+            },
+        )
+        assert created.status_code == 200
+        run_id = created.json()["run"]["id"]
+
+        approved = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-3",
+                    "channel_id": "web-main",
+                    "text": "yes",
+                },
+            },
+        )
+        assert approved.status_code == 200
+        body = approved.json()
+        assert body["command"] == "approve-all"
+        assert body["run"]["id"] == run_id
+        pending = [a for a in body["run"]["pending_actions"] if a["status"] == "pending"]
+        assert pending == []
+    finally:
         runs_routes._channel_sessions = original_sessions
         runs_routes._orchestrator = original_orchestrator
 
