@@ -153,6 +153,24 @@ _logger = logging.getLogger(__name__)
 _last_yahoo_quote_error: str | None = None
 
 
+class _GenXAIToolAgent:
+    """Lightweight agent wrapper around GenXAI tools for route-level utility calls."""
+
+    def __init__(self, orchestrator: GenXBotOrchestrator, tool_name: str = "api_caller") -> None:
+        self._orchestrator = orchestrator
+        self._tool_name = tool_name
+
+    def _resolve_tool(self):
+        tools = self._orchestrator._tool_map()
+        return tools.get(self._tool_name)
+
+    async def execute(self, **kwargs) -> object:
+        tool = self._resolve_tool()
+        if not tool:
+            raise RuntimeError(f"{self._tool_name} tool unavailable")
+        return await tool.execute(**kwargs)
+
+
 def _fallback_recipe() -> RecipeDefinition:
     return RecipeDefinition(
         id="test-hardening",
@@ -659,13 +677,10 @@ def _fetch_yahoo_quote(ticker: str) -> str | None:
 
 def _fetch_yahoo_quote_with_genxai_tool(ticker: str) -> tuple[str | None, str | None]:
     try:
-        tools = _orchestrator._tool_map()
-        api_caller = tools.get("api_caller")
-        if not api_caller:
-            return None, "api_caller tool unavailable"
+        agent = _GenXAIToolAgent(_orchestrator, tool_name="api_caller")
 
         async def _run() -> object:
-            return await api_caller.execute(
+            return await agent.execute(
                 method="GET",
                 url="https://query1.finance.yahoo.com/v7/finance/quote",
                 params={"symbols": ticker},
@@ -722,13 +737,10 @@ def _search_web_sites(query: str, limit: int = 4) -> list[tuple[str, str]]:
 
 def _search_web_sites_with_genxai_tool(query: str, limit: int = 4) -> list[tuple[str, str]]:
     try:
-        tools = _orchestrator._tool_map()
-        api_caller = tools.get("api_caller")
-        if not api_caller:
-            return []
+        agent = _GenXAIToolAgent(_orchestrator, tool_name="api_caller")
 
         async def _run() -> object:
-            return await api_caller.execute(
+            return await agent.execute(
                 method="GET",
                 url="https://duckduckgo.com/html/",
                 params={"q": query},
