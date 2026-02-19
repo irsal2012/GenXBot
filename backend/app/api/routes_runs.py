@@ -7,6 +7,7 @@ import os
 import re
 import time
 import asyncio
+import logging
 from html import unescape
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -148,6 +149,8 @@ _RECIPES_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "recipes"
 
 _INTENT_COMMAND = "command"
 _INTENT_CHAT = "chat"
+_logger = logging.getLogger(__name__)
+_last_yahoo_quote_error: str | None = None
 
 
 def _fallback_recipe() -> RecipeDefinition:
@@ -550,6 +553,10 @@ def _site_suggestions_for_query(text: str) -> str | None:
     if not cleaned:
         return None
 
+    yahoo_price = _yahoo_price_for_query(text)
+    if yahoo_price:
+        return yahoo_price
+
     if "stock" in cleaned and ("price" in cleaned or "prices" in cleaned):
         query = text.strip()
         live_results = _search_web_sites(query)
@@ -568,6 +575,129 @@ def _site_suggestions_for_query(text: str) -> str | None:
         )
 
     return None
+
+
+def _yahoo_price_for_query(text: str) -> str | None:
+    cleaned = (text or "").strip().lower()
+    if "price" not in cleaned:
+        return None
+    if "yahoo" not in cleaned and "finance.yahoo.com" not in cleaned:
+        return None
+
+    ticker = _extract_ticker_symbol(text)
+    if not ticker:
+        return None
+
+    quote = _fetch_yahoo_quote(ticker)
+    if not quote:
+        reason = _last_yahoo_quote_error or "temporary provider or network issue"
+        return (
+            f"I couldn't fetch the live Yahoo Finance price for {ticker} right now. "
+            f"Reason: {reason}. "
+            f"Try: https://finance.yahoo.com/quote/{ticker}"
+        )
+
+    return f"Yahoo Finance ({ticker}) current price: {quote}"
+
+
+def _extract_ticker_symbol(text: str) -> str | None:
+    url_match = re.search(
+        r"finance\.yahoo\.com/(?:quote/)?([A-Za-z0-9\-\.]+)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if url_match:
+        return url_match.group(1).split("?")[0].upper()
+
+    upper_tokens = re.findall(r"\b[A-Z]{1,6}\b", text)
+    stop_words = {"I", "A", "THE", "FROM", "CAN", "YOU"}
+    for token in upper_tokens:
+        if token not in stop_words:
+            return token
+    return None
+
+
+def _fetch_yahoo_quote(ticker: str) -> str | None:
+    global _last_yahoo_quote_error
+    tool_quote, tool_error = _fetch_yahoo_quote_with_genxai_tool(ticker)
+    if tool_quote:
+        _last_yahoo_quote_error = None
+        return tool_quote
+    if tool_error:
+        _logger.warning("Yahoo quote via GenXAI api_caller failed for %s: %s", ticker, tool_error)
+
+    try:
+        response = httpx.get(
+            "https://query1.finance.yahoo.com/v7/finance/quote",
+            params={"symbols": ticker},
+            timeout=3.0,
+            headers={"User-Agent": "GenXBot/1.0"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        result = ((payload.get("quoteResponse") or {}).get("result") or [{}])[0]
+        price = result.get("regularMarketPrice")
+        currency = result.get("currency")
+        if price is None:
+            _last_yahoo_quote_error = "Yahoo response had no regularMarketPrice"
+            return None
+        if currency:
+            _last_yahoo_quote_error = None
+            return f"{price} {currency}"
+        _last_yahoo_quote_error = None
+        return str(price)
+    except Exception as exc:
+        _last_yahoo_quote_error = f"HTTP fallback failed: {exc.__class__.__name__}"
+        _logger.warning("Yahoo quote HTTP fallback failed for %s: %s", ticker, exc)
+        if tool_error:
+            _last_yahoo_quote_error = (
+                f"GenXAI tool failed ({tool_error}); "
+                f"HTTP fallback failed ({exc.__class__.__name__})"
+            )
+        return None
+
+
+def _fetch_yahoo_quote_with_genxai_tool(ticker: str) -> tuple[str | None, str | None]:
+    try:
+        tools = _orchestrator._tool_map()
+        api_caller = tools.get("api_caller")
+        if not api_caller:
+            return None, "api_caller tool unavailable"
+
+        async def _run() -> object:
+            return await api_caller.execute(
+                method="GET",
+                url="https://query1.finance.yahoo.com/v7/finance/quote",
+                params={"symbols": ticker},
+                timeout=5,
+                follow_redirects=True,
+            )
+
+        try:
+            running_loop = asyncio.get_running_loop()
+            if running_loop.is_running():
+                return None, "running event loop blocks asyncio.run"
+        except RuntimeError:
+            pass
+
+        result = asyncio.run(_run())
+        payload = result.model_dump() if hasattr(result, "model_dump") else {}
+        if not payload.get("success"):
+            return None, "api_caller returned success=False"
+
+        data = payload.get("data") if isinstance(payload, dict) else None
+        json_body = data.get("data") if isinstance(data, dict) else None
+        quote_result = ((json_body or {}).get("quoteResponse") or {}).get("result") or []
+        first = quote_result[0] if quote_result else {}
+        price = first.get("regularMarketPrice")
+        currency = first.get("currency")
+        if price is None:
+            return None, "tool response missing regularMarketPrice"
+        if currency:
+            return f"{price} {currency}", None
+        return str(price), None
+    except Exception as exc:
+        return None, exc.__class__.__name__
 
 
 def _search_web_sites(query: str, limit: int = 4) -> list[tuple[str, str]]:
@@ -1439,12 +1569,7 @@ def ingest_channel_event(
                 run = updated
                 approved_count += 1
 
-        outbound_text = (
-            f"✅ Run created: {run.id}\n"
-            f"Goal: {run.goal}\n"
-            f"Auto-approved {approved_count} pending action(s).\n"
-            f"Status: {run.status}"
-        )
+        outbound_text = "Got it — your request is running."
         site_suggestions = _site_suggestions_for_query(run_goal)
         if site_suggestions:
             outbound_text = f"{outbound_text}\n\n{site_suggestions}"

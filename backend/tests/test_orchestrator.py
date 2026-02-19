@@ -583,7 +583,7 @@ def test_web_channel_natural_language_auto_approves_all(tmp_path: Path) -> None:
         assert body["command"] == "approve-all"
         assert body["run"]["id"].startswith("run_")
         assert body["response_mode"] is None
-        assert "Auto-approved" in body["outbound_text"]
+        assert body["outbound_text"].startswith("Got it — your request is running.")
     finally:
         runs_routes._channel_sessions = original_sessions
         runs_routes._orchestrator = original_orchestrator
@@ -695,6 +695,79 @@ def test_web_stock_price_request_falls_back_when_live_search_empty(tmp_path: Pat
         assert "https://finance.yahoo.com" in body["outbound_text"]
     finally:
         runs_routes._search_web_sites = original_search_web_sites
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_web_yahoo_price_request_returns_quote_when_available(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    original_fetch_yahoo_quote = runs_routes._fetch_yahoo_quote
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._fetch_yahoo_quote = lambda ticker: "187.45 USD" if ticker == "AMZN" else None
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-yahoo-price",
+                    "channel_id": "web-main",
+                    "text": "can you scrap the price of AMZN from https://finance.yahoo.com?",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["command"] == "approve-all"
+        assert "Yahoo Finance (AMZN) current price: 187.45 USD" in body["outbound_text"]
+    finally:
+        runs_routes._fetch_yahoo_quote = original_fetch_yahoo_quote
+        runs_routes._channel_sessions = original_sessions
+        runs_routes._orchestrator = original_orchestrator
+
+
+def test_web_yahoo_price_request_returns_fallback_when_quote_unavailable(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+
+    original_orchestrator = runs_routes._orchestrator
+    original_sessions = runs_routes._channel_sessions
+    original_fetch_yahoo_quote = runs_routes._fetch_yahoo_quote
+    runs_routes._orchestrator = orchestrator
+    from app.services.channel_sessions import ChannelSessionService
+
+    runs_routes._fetch_yahoo_quote = lambda ticker: None
+    runs_routes._channel_sessions = ChannelSessionService()
+    try:
+        client = TestClient(create_app())
+        response = client.post(
+            "/api/v1/runs/channels/web",
+            json={
+                "channel": "web",
+                "event_type": "message",
+                "default_repo_path": str(tmp_path),
+                "payload": {
+                    "user_id": "web-user-yahoo-price-fallback",
+                    "channel_id": "web-main",
+                    "text": "can you scrap the price of AMZN from https://finance.yahoo.com?",
+                },
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["command"] == "approve-all"
+        assert "couldn't fetch the live Yahoo Finance price for AMZN" in body["outbound_text"]
+        assert "https://finance.yahoo.com/quote/AMZN" in body["outbound_text"]
+    finally:
+        runs_routes._fetch_yahoo_quote = original_fetch_yahoo_quote
         runs_routes._channel_sessions = original_sessions
         runs_routes._orchestrator = original_orchestrator
 
