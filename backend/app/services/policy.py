@@ -13,6 +13,7 @@ class SafetyPolicy:
 
     SAFE_COMMAND_PREFIXES = (
         "pytest",
+        "python3 --version",
         "python -m pytest",
         "python3 -m pytest",
         "ruff check",
@@ -60,6 +61,7 @@ class SafetyPolicy:
     }
     ALLOWED_COMMAND_PATTERNS = (
         ("pytest",),
+        ("python3", "--version"),
         ("python", "-m", "pytest"),
         ("python3", "-m", "pytest"),
         ("ruff", "check"),

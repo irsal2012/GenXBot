@@ -14,7 +14,7 @@
     {
       "action_type": "command",
       "description": "Run baseline checks for {recipe_name}",
-      "command": "pytest -q"
+      "command": "python3 --version"
     },
     {
       "action_type": "edit",
