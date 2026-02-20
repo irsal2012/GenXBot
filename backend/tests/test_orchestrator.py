@@ -2340,6 +2340,54 @@ def test_recipes_endpoints_list_get_create() -> None:
         runs_routes._recipes.update(original_recipes)
 
 
+def test_create_recipe_accepts_text_template_only() -> None:
+    original_recipes = dict(runs_routes._recipes)
+    try:
+        client = TestClient(create_app())
+        created = client.post(
+            "/api/v1/runs/recipes",
+            json={
+                "id": "text-only-recipe",
+                "name": "Text Only Recipe",
+                "description": "Simple authoring path",
+                "text_template": "Summarize findings for {topic}",
+                "tags": ["simple"],
+            },
+        )
+        assert created.status_code == 200
+        payload = created.json()
+        assert payload["id"] == "text-only-recipe"
+        assert payload["goal_template"] == "Summarize findings for {topic}"
+    finally:
+        runs_routes._recipes.clear()
+        runs_routes._recipes.update(original_recipes)
+
+
+def test_create_recipe_requires_goal_or_text_template() -> None:
+    client = TestClient(create_app())
+    created = client.post(
+        "/api/v1/runs/recipes",
+        json={
+            "id": "invalid-recipe",
+            "name": "Invalid Recipe",
+            "description": "Missing both templates",
+        },
+    )
+    assert created.status_code == 422
+
+
+def test_file_recipe_payload_text_template_is_normalized_to_goal_template() -> None:
+    normalized = runs_routes._normalize_recipe_payload(
+        {
+            "id": "file-text-recipe",
+            "name": "File Text Recipe",
+            "description": "Text-based recipe payload",
+            "text_template": "Draft a summary for {topic}",
+        }
+    )
+    assert normalized["goal_template"] == "Draft a summary for {topic}"
+
+
 def test_skills_endpoints_list_get_create() -> None:
     original_skills = dict(runs_routes._skills)
     try:
@@ -2375,6 +2423,42 @@ def test_skills_endpoints_list_get_create() -> None:
     finally:
         runs_routes._skills.clear()
         runs_routes._skills.update(original_skills)
+
+
+def test_create_skill_accepts_text_template_only() -> None:
+    original_skills = dict(runs_routes._skills)
+    try:
+        client = TestClient(create_app())
+        created = client.post(
+            "/api/v1/runs/skills",
+            json={
+                "id": "text-only-skill",
+                "name": "Text Only Skill",
+                "description": "Simple skill authoring",
+                "text_template": "Analyze request for {topic}",
+                "trigger_phrases": ["analyze"],
+            },
+        )
+        assert created.status_code == 200
+        payload = created.json()
+        assert payload["id"] == "text-only-skill"
+        assert payload["goal_template"] == "Analyze request for {topic}"
+    finally:
+        runs_routes._skills.clear()
+        runs_routes._skills.update(original_skills)
+
+
+def test_create_skill_requires_goal_or_text_template() -> None:
+    client = TestClient(create_app())
+    created = client.post(
+        "/api/v1/runs/skills",
+        json={
+            "id": "invalid-skill",
+            "name": "Invalid Skill",
+            "description": "Missing both templates",
+        },
+    )
+    assert created.status_code == 422
 
 
 def test_create_run_with_explicit_skill_renders_goal_and_context(tmp_path: Path) -> None:

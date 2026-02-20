@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 def utc_now_iso() -> str:
@@ -48,10 +48,17 @@ class RecipeCreateRequest(BaseModel):
     id: str = Field(..., min_length=2)
     name: str = Field(..., min_length=2)
     description: str = ""
-    goal_template: str = Field(..., min_length=3)
+    goal_template: Optional[str] = Field(default=None, min_length=3)
     context_template: Optional[str] = None
+    text_template: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     action_templates: list[RecipeActionTemplate] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_recipe_authoring_inputs(self) -> "RecipeCreateRequest":
+        if self.goal_template or self.text_template:
+            return self
+        raise ValueError("Provide either goal_template or text_template")
 
 
 class RecipeListResponse(BaseModel):
@@ -76,13 +83,20 @@ class SkillCreateRequest(BaseModel):
     id: str = Field(..., min_length=2)
     name: str = Field(..., min_length=2)
     description: str = ""
-    goal_template: str = Field(..., min_length=3)
+    goal_template: Optional[str] = Field(default=None, min_length=3)
     context_template: Optional[str] = None
+    text_template: Optional[str] = None
     recipe_id: Optional[str] = None
     trigger_phrases: list[str] = Field(default_factory=list)
     tool_allowlist: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     action_templates: list[RecipeActionTemplate] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_skill_authoring_inputs(self) -> "SkillCreateRequest":
+        if self.goal_template or self.text_template:
+            return self
+        raise ValueError("Provide either goal_template or text_template")
 
 
 class SkillListResponse(BaseModel):

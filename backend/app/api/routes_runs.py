@@ -183,6 +183,15 @@ def _fallback_recipe() -> RecipeDefinition:
     )
 
 
+def _normalize_recipe_payload(payload: dict[str, object]) -> dict[str, object]:
+    normalized = dict(payload)
+    goal_template = str(normalized.get("goal_template") or "").strip()
+    text_template = str(normalized.get("text_template") or "").strip()
+    if not goal_template and text_template:
+        normalized["goal_template"] = text_template
+    return normalized
+
+
 def _load_default_recipes_from_files() -> dict[str, RecipeDefinition]:
     recipes: dict[str, RecipeDefinition] = {}
     if not _RECIPES_LIBRARY_DIR.exists() or not _RECIPES_LIBRARY_DIR.is_dir():
@@ -197,7 +206,7 @@ def _load_default_recipes_from_files() -> dict[str, RecipeDefinition]:
             continue
         try:
             payload = json.loads(definition_file.read_text(encoding="utf-8"))
-            recipe = RecipeDefinition(**payload)
+            recipe = RecipeDefinition(**_normalize_recipe_payload(payload))
         except Exception:
             continue
         recipes[recipe.id] = recipe
@@ -239,6 +248,19 @@ def _render_template(template: str | None, values: dict[str, str]) -> str | None
         return template.format(**values)
     except Exception:
         return template
+
+
+def _resolve_text_authored_goal(
+    goal_template: str | None,
+    text_template: str | None,
+) -> str:
+    preferred = (goal_template or "").strip()
+    if preferred:
+        return preferred
+    fallback = (text_template or "").strip()
+    if fallback:
+        return fallback
+    return "Describe and execute the requested workflow"
 
 
 def _render_recipe_actions(
@@ -859,7 +881,10 @@ def create_recipe(request: RecipeCreateRequest, raw_request: Request) -> RecipeD
         id=request.id.strip(),
         name=request.name.strip(),
         description=request.description.strip(),
-        goal_template=request.goal_template,
+        goal_template=_resolve_text_authored_goal(
+            goal_template=request.goal_template,
+            text_template=request.text_template,
+        ),
         context_template=request.context_template,
         tags=[t.strip() for t in request.tags if t.strip()],
         action_templates=request.action_templates,
@@ -889,7 +914,10 @@ def create_skill(request: SkillCreateRequest, raw_request: Request) -> SkillDefi
         id=request.id.strip(),
         name=request.name.strip(),
         description=request.description.strip(),
-        goal_template=request.goal_template,
+        goal_template=_resolve_text_authored_goal(
+            goal_template=request.goal_template,
+            text_template=request.text_template,
+        ),
         context_template=request.context_template,
         recipe_id=(request.recipe_id or "").strip() or None,
         trigger_phrases=[v.strip() for v in request.trigger_phrases if v.strip()],

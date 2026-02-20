@@ -1,26 +1,37 @@
 {
   "id": "1password",
-  "name": "1password",
-  "description": "Reusable recipe mapped from capability: 1password",
-  "goal_template": "Execute the {recipe_name} workflow for this repository and summarize outcomes",
-  "context_template": "recipe_id={recipe_id}\nfocus={focus}\npriority={priority}\nconstraints={constraints}",
+  "name": "1Password Vault Inspect",
+  "description": "Inspect 1Password CLI availability, account access, and vault item metadata, then produce a local summary",
+  "goal_template": "Inspect 1Password vault {vault} for item {item} and summarize findings and next actions",
+  "context_template": "recipe_id={recipe_id}\nvault={vault}\nitem={item}\nfocus={focus}\npriority={priority}\nconstraints={constraints}",
   "tags": [
-    "capability-library",
-    "template-parity",
-    "recipe"
+    "security",
+    "secrets",
+    "1password",
+    "ops"
   ],
   "enabled": true,
   "action_templates": [
     {
       "action_type": "command",
-      "description": "Run baseline checks for {recipe_name}",
-      "command": "pytest -q"
+      "description": "Check 1Password CLI availability",
+      "command": "op --version"
+    },
+    {
+      "action_type": "command",
+      "description": "List signed-in 1Password accounts",
+      "command": "op account list"
+    },
+    {
+      "action_type": "command",
+      "description": "List vault items metadata (non-secret fields)",
+      "command": "op item list --vault \"{vault}\" --format json"
     },
     {
       "action_type": "edit",
-      "description": "Write summary artifact for {recipe_name}",
+      "description": "Write 1Password inspection summary artifact",
       "file_path": "recipe_outputs/{recipe_id}_summary.md",
-      "patch": "FULL_FILE_CONTENT:\n# Recipe Execution Summary\\n\\n- recipe: {recipe_name}\\n- focus: {focus}\\n- priority: {priority}\\n- constraints: {constraints}\\n"
+      "patch": "FULL_FILE_CONTENT:\n# 1Password Inspection Summary\\n\\n- recipe: {recipe_name}\\n- vault: {vault}\\n- item: {item}\\n- focus: {focus}\\n- priority: {priority}\\n- constraints: {constraints}\\n\\n## Notes\\n- This workflow inspects CLI/account/item metadata via the `op` CLI.\\n- Ensure you are signed in (`op signin`) before running in production workflows.\\n- Avoid storing secret values directly in generated artifacts.\\n"
     }
   ]
 }

@@ -1,0 +1,37 @@
+{
+  "id": "1password-secret-read",
+  "name": "1Password Secret Field Read",
+  "description": "Read a specific field from a 1Password item with explicit approval and write a controlled summary",
+  "goal_template": "Read field {field} from item {item} in vault {vault} and summarize handling guidance",
+  "context_template": "recipe_id={recipe_id}\nvault={vault}\nitem={item}\nfield={field}\nfocus={focus}\npriority={priority}\nconstraints={constraints}",
+  "tags": [
+    "security",
+    "secrets",
+    "1password",
+    "restricted"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Check 1Password CLI availability",
+      "command": "op --version"
+    },
+    {
+      "action_type": "command",
+      "description": "List signed-in 1Password accounts",
+      "command": "op account list"
+    },
+    {
+      "action_type": "command",
+      "description": "Read requested secret field from item (approval required)",
+      "command": "op item get \"{item}\" --vault \"{vault}\" --fields \"{field}\""
+    },
+    {
+      "action_type": "edit",
+      "description": "Write controlled secret-read summary artifact",
+      "file_path": "recipe_outputs/{recipe_id}_summary.md",
+      "patch": "FULL_FILE_CONTENT:\n# 1Password Secret Read Summary\\n\\n- recipe: {recipe_name}\\n- vault: {vault}\\n- item: {item}\\n- field: {field}\\n- focus: {focus}\\n- priority: {priority}\\n- constraints: {constraints}\\n\\n## Security Notes\\n- Secret field reads should remain approval-gated and auditable.\\n- Avoid copying raw secret values into source files, commits, or long-lived logs.\\n- Rotate credentials if accidental exposure is suspected.\\n"
+    }
+  ]
+}
