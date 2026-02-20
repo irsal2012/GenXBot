@@ -29,6 +29,48 @@ def approver_request(action_id: str, approve: bool, comment: str = "") -> Approv
     )
 
 
+def test_runtime_profile_single_mode_defaults_to_single_agent() -> None:
+    orchestrator = build_orchestrator()
+    orchestrator._settings.agent_runtime_mode = "single"
+    profile = orchestrator._resolve_runtime_profile(goal="help me summarize this", expected_actions=2)
+
+    assert profile["mode"] == "single"
+    assert profile["use_split_planner_executor"] is False
+    assert profile["use_reviewer"] is False
+
+
+def test_runtime_profile_hybrid_enables_reviewer_for_high_risk_goal() -> None:
+    orchestrator = build_orchestrator()
+    orchestrator._settings.agent_runtime_mode = "hybrid"
+    orchestrator._settings.agent_enable_reviewer_on_high_risk = True
+
+    profile = orchestrator._resolve_runtime_profile(
+        goal="prepare production deploy with auth changes",
+        expected_actions=1,
+    )
+
+    assert profile["mode"] == "hybrid"
+    assert profile["use_split_planner_executor"] is False
+    assert profile["use_reviewer"] is True
+
+
+def test_create_run_single_mode_emits_runtime_marker_and_assistant_plan(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+    orchestrator._settings.agent_runtime_mode = "single"
+
+    run = orchestrator.create_run(
+        RunTaskRequest(goal="Draft a concise project summary", repo_path=str(tmp_path))
+    )
+
+    runtime_event = next((evt for evt in run.timeline if evt.event == "runtime_mode_selected"), None)
+    assert runtime_event is not None
+    assert "Runtime mode=single" in runtime_event.content
+
+    plan_event = next((evt for evt in run.timeline if evt.event == "plan_created"), None)
+    assert plan_event is not None
+    assert plan_event.agent == "assistant"
+
+
 def test_parse_channel_command_supports_yes_no_aliases() -> None:
     assert parse_channel_command("yes") == ("approve", "")
     assert parse_channel_command("Y") == ("approve", "")

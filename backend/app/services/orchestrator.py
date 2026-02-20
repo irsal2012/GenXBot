@@ -441,6 +441,56 @@ class GenXBotOrchestrator:
     def _tool_map(self) -> dict[str, Tool]:
         return {tool.metadata.name: tool for tool in ToolRegistry.list_all()}
 
+    def _normalized_runtime_mode(self) -> str:
+        mode = (self._settings.agent_runtime_mode or "single").strip().lower()
+        if mode not in {"single", "multi", "hybrid"}:
+            return "single"
+        return mode
+
+    @staticmethod
+    def _looks_high_risk(goal: str) -> bool:
+        lowered = (goal or "").lower()
+        high_risk_keywords = (
+            "production",
+            "deploy",
+            "delete",
+            "drop table",
+            "migration",
+            "security",
+            "auth",
+            "payment",
+            "billing",
+            "infra",
+        )
+        return any(token in lowered for token in high_risk_keywords)
+
+    def _resolve_runtime_profile(self, goal: str, expected_actions: int) -> dict[str, Any]:
+        mode = self._normalized_runtime_mode()
+        complexity_threshold = max(1, self._settings.agent_complexity_action_threshold)
+        is_complex = expected_actions >= complexity_threshold
+        is_high_risk = self._looks_high_risk(goal)
+
+        use_split_planner_executor = mode == "multi"
+        use_reviewer = mode == "multi"
+
+        if mode == "hybrid":
+            use_split_planner_executor = (
+                self._settings.agent_enable_planner_split_for_complex and is_complex
+            )
+            use_reviewer = use_split_planner_executor or (
+                self._settings.agent_enable_reviewer_on_high_risk and is_high_risk
+            )
+
+        return {
+            "mode": mode,
+            "is_complex": is_complex,
+            "is_high_risk": is_high_risk,
+            "use_split_planner_executor": use_split_planner_executor,
+            "use_reviewer": use_reviewer,
+            "expected_actions": expected_actions,
+            "complexity_threshold": complexity_threshold,
+        }
+
     def _build_redis_client(self) -> Optional[Any]:
         if not self._settings.redis_enabled:
             return None
@@ -469,7 +519,7 @@ class GenXBotOrchestrator:
         except Exception:
             return None
 
-    def _build_genxai_stack(self, run_id: str, goal: str) -> dict[str, Any]:
+    def _build_genxai_stack(self, run_id: str, goal: str, expected_actions: int = 0) -> dict[str, Any]:
         tools = self._tool_map()
         preferred_tools = [
             "directory_scanner",
@@ -481,34 +531,72 @@ class GenXBotOrchestrator:
         ]
         enabled_tools = [name for name in preferred_tools if name in tools]
 
-        planner_id = f"planner_{run_id}"
-        executor_id = f"executor_{run_id}"
-        reviewer_id = f"reviewer_{run_id}"
+        profile = self._resolve_runtime_profile(goal=goal, expected_actions=expected_actions)
 
-        AgentFactory.create_agent(
-            id=planner_id,
-            role="Codebase Planner",
-            goal="Produce safe, testable coding plans from user goals",
-            llm_model="gpt-4",
-            tools=enabled_tools,
-            enable_memory=True,
-        )
-        AgentFactory.create_agent(
-            id=executor_id,
-            role="Code Executor",
-            goal="Propose and execute coding actions safely",
-            llm_model="gpt-4",
-            tools=enabled_tools,
-            enable_memory=True,
-        )
-        AgentFactory.create_agent(
-            id=reviewer_id,
-            role="Code Reviewer",
-            goal="Review plans and actions for safety and quality",
-            llm_model="gpt-4",
-            tools=enabled_tools,
-            enable_memory=True,
-        )
+        planner_id: str | None = None
+        executor_id: str | None = None
+        reviewer_id: str | None = None
+        assistant_id: str | None = None
+
+        if profile["use_split_planner_executor"]:
+            planner_id = f"planner_{run_id}"
+            executor_id = f"executor_{run_id}"
+            AgentFactory.create_agent(
+                id=planner_id,
+                role="Task Planner",
+                goal=(
+                    "Understand user intent and context, then produce a clear, minimal-risk "
+                    "action plan using available skills, recipes, and tools. "
+                    "When uncertainty or risk is high, ask for clarification or explicit approval "
+                    "before proceeding."
+                ),
+                llm_model="gpt-4",
+                tools=enabled_tools,
+                enable_memory=True,
+            )
+            AgentFactory.create_agent(
+                id=executor_id,
+                role="Task Executor",
+                goal=(
+                    "Execute approved actions reliably across tools and channels, capture outputs "
+                    "clearly, and use safe fallbacks when failures occur. "
+                    "When uncertainty or risk is high, ask for clarification or explicit approval "
+                    "before proceeding."
+                ),
+                llm_model="gpt-4",
+                tools=enabled_tools,
+                enable_memory=True,
+            )
+        else:
+            assistant_id = f"assistant_{run_id}"
+            executor_id = assistant_id
+            AgentFactory.create_agent(
+                id=assistant_id,
+                role="Personal Execution Assistant",
+                goal=(
+                    "Act as a personal execution assistant that helps the user complete tasks "
+                    "across channels and tools safely, accurately, and efficiently. "
+                    "When uncertainty or risk is high, ask for clarification or explicit approval "
+                    "before proceeding."
+                ),
+                llm_model="gpt-4",
+                tools=enabled_tools,
+                enable_memory=True,
+            )
+
+        if profile["use_reviewer"]:
+            reviewer_id = f"reviewer_{run_id}"
+            AgentFactory.create_agent(
+                id=reviewer_id,
+                role="Safety Reviewer",
+                goal=(
+                    "Review plans and outcomes for safety, policy compliance, and task completeness, "
+                    "and recommend corrections when needed."
+                ),
+                llm_model="gpt-4",
+                tools=enabled_tools,
+                enable_memory=True,
+            )
 
         memory_kwargs = {
             "agent_id": f"genxbot_{run_id}",
@@ -529,49 +617,92 @@ class GenXBotOrchestrator:
             memory_kwargs.pop("graph_db", None)
             memory = MemorySystem(**memory_kwargs)
 
-        workflow_nodes = [
-            {"id": "start", "type": "input", "config": {}},
-            {
-                "id": planner_id,
-                "type": "agent",
-                "config": {
-                    "role": "Codebase Planner",
-                    "goal": "Produce safe, testable coding plans from user goals",
-                    "tools": enabled_tools,
-                    "llm_model": "gpt-4",
-                    "temperature": 0.3,
-                },
-            },
-            {
-                "id": executor_id,
-                "type": "agent",
-                "config": {
-                    "role": "Code Executor",
-                    "goal": "Propose and execute coding actions safely",
-                    "tools": enabled_tools,
-                    "llm_model": "gpt-4",
-                    "temperature": 0.2,
-                },
-            },
-            {
-                "id": reviewer_id,
-                "type": "agent",
-                "config": {
-                    "role": "Code Reviewer",
-                    "goal": "Review plans and actions for safety and quality",
-                    "tools": enabled_tools,
-                    "llm_model": "gpt-4",
-                    "temperature": 0.2,
-                },
-            },
-            {"id": "end", "type": "output", "config": {}},
-        ]
-        workflow_edges = [
-            {"source": "start", "target": planner_id},
-            {"source": planner_id, "target": executor_id},
-            {"source": executor_id, "target": reviewer_id},
-            {"source": reviewer_id, "target": "end"},
-        ]
+        workflow_nodes: list[dict[str, Any]] = [{"id": "start", "type": "input", "config": {}}]
+        workflow_edges: list[dict[str, str]] = []
+
+        if profile["use_split_planner_executor"] and planner_id and executor_id:
+            workflow_nodes.append(
+                {
+                    "id": planner_id,
+                    "type": "agent",
+                    "config": {
+                        "role": "Task Planner",
+                        "goal": (
+                            "Understand user intent and context, then produce a clear, minimal-risk "
+                            "action plan using available skills, recipes, and tools."
+                        ),
+                        "tools": enabled_tools,
+                        "llm_model": "gpt-4",
+                        "temperature": 0.3,
+                    },
+                }
+            )
+            workflow_nodes.append(
+                {
+                    "id": executor_id,
+                    "type": "agent",
+                    "config": {
+                        "role": "Task Executor",
+                        "goal": (
+                            "Execute approved actions reliably across tools and channels, capture outputs "
+                            "clearly, and use safe fallbacks when failures occur."
+                        ),
+                        "tools": enabled_tools,
+                        "llm_model": "gpt-4",
+                        "temperature": 0.2,
+                    },
+                }
+            )
+            workflow_edges.extend(
+                [
+                    {"source": "start", "target": planner_id},
+                    {"source": planner_id, "target": executor_id},
+                ]
+            )
+            previous_node = executor_id
+        else:
+            assert assistant_id is not None
+            workflow_nodes.append(
+                {
+                    "id": assistant_id,
+                    "type": "agent",
+                    "config": {
+                        "role": "Personal Execution Assistant",
+                        "goal": (
+                            "Act as a personal execution assistant that helps the user complete tasks "
+                            "across channels and tools safely, accurately, and efficiently."
+                        ),
+                        "tools": enabled_tools,
+                        "llm_model": "gpt-4",
+                        "temperature": 0.2,
+                    },
+                }
+            )
+            workflow_edges.append({"source": "start", "target": assistant_id})
+            previous_node = assistant_id
+
+        if profile["use_reviewer"] and reviewer_id:
+            workflow_nodes.append(
+                {
+                    "id": reviewer_id,
+                    "type": "agent",
+                    "config": {
+                        "role": "Safety Reviewer",
+                        "goal": (
+                            "Review plans and outcomes for safety, policy compliance, and task completeness, "
+                            "and recommend corrections when needed."
+                        ),
+                        "tools": enabled_tools,
+                        "llm_model": "gpt-4",
+                        "temperature": 0.2,
+                    },
+                }
+            )
+            workflow_edges.append({"source": previous_node, "target": reviewer_id})
+            previous_node = reviewer_id
+
+        workflow_nodes.append({"id": "end", "type": "output", "config": {}})
+        workflow_edges.append({"source": previous_node, "target": "end"})
 
         workflow_executor = WorkflowExecutor(
             openai_api_key=os.getenv("OPENAI_API_KEY"),
@@ -582,6 +713,8 @@ class GenXBotOrchestrator:
             "memory": memory,
             "tools": tools,
             "goal": goal,
+            "runtime_profile": profile,
+            "assistant_id": assistant_id,
             "planner_id": planner_id,
             "executor_id": executor_id,
             "reviewer_id": reviewer_id,
@@ -634,12 +767,18 @@ class GenXBotOrchestrator:
         workflow_state = workflow_result.get("result", {})
         node_results = workflow_state.get("node_results", {}) if isinstance(workflow_state, dict) else {}
 
-        planner_output = node_results.get(stack["planner_id"], {}).get("output")
-        executor_output = node_results.get(stack["executor_id"], {}).get("output")
-        reviewer_output = node_results.get(stack["reviewer_id"], {}).get("output")
+        planner_id = stack.get("planner_id")
+        executor_id = stack.get("executor_id")
+        assistant_id = stack.get("assistant_id")
+        reviewer_id = stack.get("reviewer_id")
+
+        planner_output = node_results.get(planner_id, {}).get("output") if planner_id else None
+        assistant_output = node_results.get(assistant_id, {}).get("output") if assistant_id else None
+        executor_output = node_results.get(executor_id, {}).get("output") if executor_id else None
+        reviewer_output = node_results.get(reviewer_id, {}).get("output") if reviewer_id else None
 
         return {
-            "plan_text": self._extract_output_text(planner_output),
+            "plan_text": self._extract_output_text(planner_output or assistant_output),
             "executor_output": self._extract_output_text(executor_output),
             "review": reviewer_output or {},
             "node_events": workflow_result.get("node_events", []),
@@ -693,6 +832,16 @@ class GenXBotOrchestrator:
                 )
             )
 
+        if recipe_actions:
+            proposed_actions = recipe_actions
+        elif _goal_requests_web_app(request.goal):
+            proposed_actions = _build_web_app_scaffold_actions(
+                workspace_path=workspace_path,
+                goal=request.goal,
+            )
+        else:
+            proposed_actions = base_actions
+
         run = RunSession(
             id=run_id,
             goal=request.goal,
@@ -717,7 +866,24 @@ class GenXBotOrchestrator:
         run.created_at = _now()
         run.updated_at = run.created_at
 
-        self._genxai_runtime_ctx[run.id] = self._build_genxai_stack(run.id, request.goal)
+        self._genxai_runtime_ctx[run.id] = self._build_genxai_stack(
+            run.id,
+            request.goal,
+            expected_actions=len(proposed_actions),
+        )
+        runtime_profile = self._genxai_runtime_ctx[run.id].get("runtime_profile", {})
+        runtime_mode = runtime_profile.get("mode", "single")
+        run.timeline.append(
+            TimelineEvent(
+                agent="system",
+                event="runtime_mode_selected",
+                content=(
+                    f"Runtime mode={runtime_mode}; "
+                    f"split_planner_executor={runtime_profile.get('use_split_planner_executor', False)}; "
+                    f"reviewer_enabled={runtime_profile.get('use_reviewer', False)}"
+                ),
+            )
+        )
 
         openai_key = os.getenv("OPENAI_API_KEY")
         pipeline_output: dict[str, Any] = {}
@@ -735,7 +901,10 @@ class GenXBotOrchestrator:
                     TimelineEvent(
                         agent="genxai_runtime",
                         event="pipeline_executed",
-                        content="WorkflowExecutor pipeline completed with live LLM runtime.",
+                        content=(
+                            "WorkflowExecutor pipeline completed with live LLM runtime "
+                            f"(mode={runtime_mode})."
+                        ),
                     )
                 )
             except Exception as exc:
@@ -755,15 +924,6 @@ class GenXBotOrchestrator:
                 )
             )
 
-        if recipe_actions:
-            proposed_actions = recipe_actions
-        elif _goal_requests_web_app(request.goal):
-            proposed_actions = _build_web_app_scaffold_actions(
-                workspace_path=workspace_path,
-                goal=request.goal,
-            )
-        else:
-            proposed_actions = base_actions
         if recipe_actions:
             run.timeline.append(
                 TimelineEvent(
@@ -794,12 +954,13 @@ class GenXBotOrchestrator:
         status = "awaiting_approval" if has_gate else "running"
         run.status = status
         run.pending_actions = proposed_actions
+        planner_agent = "planner" if runtime_profile.get("use_split_planner_executor") else "assistant"
         run.timeline.extend(
             [
                 TimelineEvent(
-                    agent="planner",
+                    agent=planner_agent,
                     event="plan_created",
-                    content="Generated 4-step autonomous coding plan.",
+                    content="Generated autonomous execution plan.",
                 ),
                 TimelineEvent(
                     agent="executor",

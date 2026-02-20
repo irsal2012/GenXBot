@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     memory_persistence_path: str = ".genxai/memory/genxbot"
     memory_sqlite_path: str = ".genxai/memory/genxbot/memory.db"
 
+    # Agent runtime modes:
+    # - single: one assistant agent handles plan/execute guidance
+    # - multi: planner/executor/reviewer pipeline
+    # - hybrid: single by default, optional split/reviewer based on heuristics
+    agent_runtime_mode: str = "single"
+    agent_enable_reviewer_on_high_risk: bool = True
+    agent_enable_planner_split_for_complex: bool = True
+    agent_complexity_action_threshold: int = 4
+
     redis_enabled: bool = False
     redis_url: str = "redis://localhost:6379"
 
