@@ -181,3 +181,36 @@ Per-channel operational switch to temporarily block new channel ingests:
 - If `OPENAI_API_KEY` is present, GenXAI runtime executes live planner/executor/reviewer pipeline.
 - If key is missing or runtime fails, flow falls back to deterministic proposal while preserving GenXAI wiring.
 - Approval gates remain active via `SafetyPolicy`.
+
+## Agent runtime modes (`single` / `multi` / `hybrid`)
+
+GenXBot supports three runtime behavior modes (configured via env):
+
+- `AGENT_RUNTIME_MODE=single`
+  - One assistant agent handles planning + execution guidance.
+  - Lowest overhead, fastest default behavior.
+
+- `AGENT_RUNTIME_MODE=multi`
+  - Uses role split: planner + executor + reviewer.
+  - More structured checks for complex/high-risk tasks.
+
+- `AGENT_RUNTIME_MODE=hybrid`
+  - Adaptive mode.
+  - Can behave like single for simple runs, and enable extra structure for complex/high-risk runs.
+
+Related env controls:
+
+- `AGENT_ENABLE_REVIEWER_ON_HIGH_RISK=true|false`
+- `AGENT_ENABLE_PLANNER_SPLIT_FOR_COMPLEX=true|false`
+- `AGENT_COMPLEXITY_ACTION_THRESHOLD=<int>`
+
+Example:
+
+```env
+AGENT_RUNTIME_MODE=hybrid
+AGENT_ENABLE_REVIEWER_ON_HIGH_RISK=true
+AGENT_ENABLE_PLANNER_SPLIT_FOR_COMPLEX=true
+AGENT_COMPLEXITY_ACTION_THRESHOLD=4
+```
+
+After changing env values, restart backend for settings to take effect.
