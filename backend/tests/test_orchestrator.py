@@ -6,7 +6,7 @@ import time
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.schemas import ApprovalRequest, RerunFailedStepRequest, RunTaskRequest
+from app.schemas import ApprovalRequest, RerunFailedStepRequest, RunTaskRequest, SkillDefinition
 from app.services.channels import parse_channel_command
 from app.services.orchestrator import GenXBotOrchestrator
 import app.api.routes_runs as runs_routes
@@ -2459,6 +2459,134 @@ def test_create_skill_requires_goal_or_text_template() -> None:
         },
     )
     assert created.status_code == 422
+
+
+def test_file_skill_payload_text_template_is_normalized_to_goal_template() -> None:
+    normalized = runs_routes._normalize_skill_payload(
+        {
+            "id": "file-text-skill",
+            "name": "File Text Skill",
+            "description": "Text-based skill payload",
+            "text_template": "Research {topic} and summarize findings",
+        }
+    )
+    assert normalized["goal_template"] == "Research {topic} and summarize findings"
+
+
+def test_load_default_skills_from_files_reads_skills_folder(tmp_path: Path) -> None:
+    skills_dir = tmp_path / "skills"
+    market_dir = skills_dir / "market-research"
+    market_dir.mkdir(parents=True, exist_ok=True)
+    (market_dir / "skill.json").write_text(
+        """
+{
+  "id": "market-research",
+  "name": "Market Research",
+  "description": "Loaded from file",
+  "goal_template": "Find market links for {topic}",
+  "trigger_phrases": ["stock price"],
+  "enabled": true
+}
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    original_dir = runs_routes._SKILLS_LIBRARY_DIR
+    runs_routes._SKILLS_LIBRARY_DIR = skills_dir
+    try:
+        loaded = runs_routes._load_default_skills_from_files()
+        assert "market-research" in loaded
+        assert loaded["market-research"].description == "Loaded from file"
+    finally:
+        runs_routes._SKILLS_LIBRARY_DIR = original_dir
+
+
+def test_resolve_skill_request_applies_skill_tool_allowlist() -> None:
+    original_skills = dict(runs_routes._skills)
+    runs_routes._skills = {
+        "skill-with-tools": SkillDefinition(
+            id="skill-with-tools",
+            name="Skill With Tools",
+            description="Tool-filtered skill",
+            goal_template="Do work for {topic}",
+            tool_allowlist=["api_caller", "http_client"],
+            enabled=True,
+        )
+    }
+    try:
+        resolved = runs_routes._resolve_skill_request(
+            RunTaskRequest(
+                goal="placeholder",
+                repo_path=".",
+                skill_id="skill-with-tools",
+                skill_inputs={"topic": "stocks"},
+            )
+        )
+        assert resolved.tool_allowlist == ["api_caller", "http_client"]
+    finally:
+        runs_routes._skills.clear()
+        runs_routes._skills.update(original_skills)
+
+
+def test_resolve_skill_request_preserves_request_tool_allowlist_override() -> None:
+    original_skills = dict(runs_routes._skills)
+    runs_routes._skills = {
+        "skill-with-tools": SkillDefinition(
+            id="skill-with-tools",
+            name="Skill With Tools",
+            description="Tool-filtered skill",
+            goal_template="Do work for {topic}",
+            tool_allowlist=["api_caller", "http_client"],
+            enabled=True,
+        )
+    }
+    try:
+        resolved = runs_routes._resolve_skill_request(
+            RunTaskRequest(
+                goal="placeholder",
+                repo_path=".",
+                skill_id="skill-with-tools",
+                skill_inputs={"topic": "stocks"},
+                tool_allowlist=["web_scraper"],
+            )
+        )
+        assert resolved.tool_allowlist == ["web_scraper"]
+    finally:
+        runs_routes._skills.clear()
+        runs_routes._skills.update(original_skills)
+
+
+def test_create_run_passes_tool_allowlist_to_runtime_stack(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+    captured: dict[str, list[str]] = {}
+
+    def fake_build_genxai_stack(
+        run_id: str,
+        goal: str,
+        expected_actions: int = 0,
+        tool_allowlist: list[str] | None = None,
+    ) -> dict:
+        captured["tool_allowlist"] = tool_allowlist or []
+        return {
+            "runtime_profile": {
+                "mode": "single",
+                "use_split_planner_executor": False,
+                "use_reviewer": False,
+            }
+        }
+
+    orchestrator._build_genxai_stack = fake_build_genxai_stack  # type: ignore[assignment]
+
+    run = orchestrator.create_run(
+        RunTaskRequest(
+            goal="Validate runtime tool filtering",
+            repo_path=str(tmp_path),
+            tool_allowlist=["api_caller"],
+        )
+    )
+
+    assert run.id.startswith("run_")
+    assert captured["tool_allowlist"] == ["api_caller"]
 
 
 def test_create_run_with_explicit_skill_renders_goal_and_context(tmp_path: Path) -> None:

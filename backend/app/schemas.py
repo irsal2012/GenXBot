@@ -23,6 +23,7 @@ class RunTaskRequest(BaseModel):
     recipe_id: Optional[str] = None
     recipe_inputs: dict[str, str] = Field(default_factory=dict)
     recipe_actions: list["RecipeActionTemplate"] = Field(default_factory=list)
+    tool_allowlist: list[str] = Field(default_factory=list)
 
 
 class RecipeActionTemplate(BaseModel):

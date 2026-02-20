@@ -519,7 +519,13 @@ class GenXBotOrchestrator:
         except Exception:
             return None
 
-    def _build_genxai_stack(self, run_id: str, goal: str, expected_actions: int = 0) -> dict[str, Any]:
+    def _build_genxai_stack(
+        self,
+        run_id: str,
+        goal: str,
+        expected_actions: int = 0,
+        tool_allowlist: list[str] | None = None,
+    ) -> dict[str, Any]:
         tools = self._tool_map()
         preferred_tools = [
             "directory_scanner",
@@ -530,6 +536,9 @@ class GenXBotOrchestrator:
             "regex_matcher",
         ]
         enabled_tools = [name for name in preferred_tools if name in tools]
+        if tool_allowlist:
+            allowed = {v.strip() for v in tool_allowlist if v.strip()}
+            enabled_tools = [name for name in enabled_tools if name in allowed]
 
         profile = self._resolve_runtime_profile(goal=goal, expected_actions=expected_actions)
 
@@ -870,6 +879,7 @@ class GenXBotOrchestrator:
             run.id,
             request.goal,
             expected_actions=len(proposed_actions),
+            tool_allowlist=request.tool_allowlist,
         )
         runtime_profile = self._genxai_runtime_ctx[run.id].get("runtime_profile", {})
         runtime_mode = runtime_profile.get("mode", "single")

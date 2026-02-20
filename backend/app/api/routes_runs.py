@@ -146,6 +146,7 @@ _admin_authz = AdminAuthorizationService()
 _admin_audit = AdminAuditService(max_entries=_settings.admin_audit_max_entries)
 
 _RECIPES_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "recipes"
+_SKILLS_LIBRARY_DIR = Path(__file__).resolve().parents[1] / "skills"
 
 _INTENT_COMMAND = "command"
 _INTENT_CHAT = "chat"
@@ -236,7 +237,40 @@ def _load_default_skills() -> dict[str, SkillDefinition]:
     return {skill.id: skill}
 
 
-_skills: dict[str, SkillDefinition] = _load_default_skills()
+def _normalize_skill_payload(payload: dict[str, object]) -> dict[str, object]:
+    normalized = dict(payload)
+    goal_template = str(normalized.get("goal_template") or "").strip()
+    text_template = str(normalized.get("text_template") or "").strip()
+    if not goal_template and text_template:
+        normalized["goal_template"] = text_template
+    return normalized
+
+
+def _load_default_skills_from_files() -> dict[str, SkillDefinition]:
+    skills: dict[str, SkillDefinition] = {}
+    if not _SKILLS_LIBRARY_DIR.exists() or not _SKILLS_LIBRARY_DIR.is_dir():
+        return _load_default_skills()
+
+    for skill_dir in sorted(_SKILLS_LIBRARY_DIR.iterdir(), key=lambda p: p.name):
+        if not skill_dir.is_dir():
+            continue
+        definition_file = skill_dir / "skill.json"
+        if not definition_file.exists():
+            continue
+        try:
+            payload = json.loads(definition_file.read_text(encoding="utf-8"))
+            skill = SkillDefinition(**_normalize_skill_payload(payload))
+        except Exception:
+            continue
+        skills[skill.id] = skill
+
+    if not skills:
+        return _load_default_skills()
+
+    return skills
+
+
+_skills: dict[str, SkillDefinition] = _load_default_skills_from_files()
 
 
 def _render_template(template: str | None, values: dict[str, str]) -> str | None:
@@ -341,10 +375,14 @@ def _resolve_skill_request(request: RunTaskRequest) -> RunTaskRequest:
     rendered_context = _render_template(skill.context_template, render_values)
     rendered_actions = _render_recipe_actions(skill.action_templates, render_values)
     merged_context = "\n".join(v for v in [request.context, rendered_context] if v)
+    resolved_tool_allowlist = [v.strip() for v in request.tool_allowlist if v.strip()]
+    if not resolved_tool_allowlist:
+        resolved_tool_allowlist = [v.strip() for v in skill.tool_allowlist if v.strip()]
 
     update: dict[str, object] = {
         "goal": rendered_goal,
         "context": merged_context or None,
+        "tool_allowlist": resolved_tool_allowlist,
     }
     if rendered_actions:
         update["recipe_actions"] = rendered_actions

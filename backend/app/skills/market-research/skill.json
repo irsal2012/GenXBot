@@ -1,0 +1,22 @@
+{
+  "id": "market-research",
+  "name": "Market Research",
+  "description": "Find reliable market/stock information sources for user questions",
+  "goal_template": "Find reliable websites for market and stock information, then summarize useful links",
+  "context_template": "focus=web_research",
+  "trigger_phrases": [
+    "stock price",
+    "stock prices",
+    "market research"
+  ],
+  "tool_allowlist": [
+    "api_caller",
+    "web_scraper",
+    "http_client"
+  ],
+  "tags": [
+    "research",
+    "web"
+  ],
+  "enabled": true
+}
