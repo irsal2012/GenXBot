@@ -6,11 +6,11 @@ This guide explains how to run GenXBot end-to-end, use the UI/API, and exercise 
 
 ## 1) What GenXBot does
 
-GenXBot is an autonomous coding assistant app built on GenXAI.
+GenXBot is an autonomous agent assistant app built on GenXAI.
 
 It supports:
 
-- creating coding runs from API/UI/channel messages
+- creating autonomous runs from API/UI/channel messages
 - plan + action workflow with approval gates
 - channel-based commands (`/run`, `/status`, `/approve`, `/reject`, `/approve-all`)
 - web channel intent routing (chat vs command) with natural-language auto-run support

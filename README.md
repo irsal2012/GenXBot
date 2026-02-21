@@ -1,4 +1,4 @@
-# GenXBot (OpenClaw-style Autonomous Coding App)
+# GenXBot (OpenClaw-style Autonomous Agent App)
 
 This app is scaffolded in `applications/genxbot` and now wired to **GenXAI** primitives:
 
@@ -112,7 +112,7 @@ Detailed release/publish instructions:
 
 ## API
 
-- `POST /api/v1/runs` create autonomous coding run
+- `POST /api/v1/runs` create autonomous run
 - `GET /api/v1/runs/recipes` list available recipes
 - `GET /api/v1/runs/recipes/{recipe_id}` get recipe details
 - `POST /api/v1/runs/recipes` create recipe (admin)

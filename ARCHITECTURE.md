@@ -1,6 +1,6 @@
 # GenXBot Architecture
 
-GenXBot is an OpenClaw-style autonomous coding application built on **GenXAI**, an agentic AI framework that supplies planners, executors, reviewers, memory, and tool orchestration. GenXBot wraps that framework with a FastAPI backend, a React (Vite) control UI, and a Node-based CLI for onboarding and daemon setup. The system is optimized for **plan → approval → execution** workflows with explicit safety gates.
+GenXBot is an OpenClaw-style autonomous agent application built on **GenXAI**, an agentic AI framework that supplies planners, executors, reviewers, memory, and tool orchestration. GenXBot wraps that framework with a FastAPI backend, a React (Vite) control UI, and a Node-based CLI for onboarding and daemon setup. The system is optimized for **plan → approval → execution** workflows with explicit safety gates.
 
 ## Goals & Design Principles
 
