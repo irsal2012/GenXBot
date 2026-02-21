@@ -7,8 +7,14 @@
     "genxbot": "bin/genxbot.js"
   },
   "type": "commonjs",
+  "scripts": {
+    "release:check": "node ./scripts/release-check.cjs",
+    "release:validate": "npm run release:check && npm pack --dry-run && npm publish --dry-run --access public"
+  },
   "files": [
-    "bin"
+    "bin",
+    "scripts",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=18"

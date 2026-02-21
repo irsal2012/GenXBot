@@ -1,0 +1,82 @@
+name: cli-release
+
+on:
+  pull_request:
+    paths:
+      - "cli/**"
+      - ".github/workflows/cli-release.yml"
+      - ".github/workflows/release-please.yml"
+      - ".release-please-config.json"
+      - ".release-please-manifest.json"
+  push:
+    tags:
+      - "cli-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate CLI release gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Validate package metadata and changelog
+        run: node ./scripts/release-check.cjs "${GITHUB_REF_NAME}"
+
+      - name: Validate npm package contents
+        run: npm pack --dry-run
+
+      - name: Validate npm publish command (dry-run)
+        run: npm publish --dry-run --access public
+
+  publish:
+    name: Publish CLI to npm
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/cli-v')
+    runs-on: ubuntu-latest
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure NPM_TOKEN is configured
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "NPM_TOKEN is not configured for this repository/environment."
+            exit 1
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Re-check tag/version gate before publish
+        run: node ./scripts/release-check.cjs "${GITHUB_REF_NAME}"
+
+      - name: Publish package
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -76,50 +76,66 @@ npm install -g @genexsus-ai/genxbot@latest
 
 ---
 
-## 4) Version bump before each publish
+## 4) Versioning and changelog policy (CI-driven)
 
-From CLI package directory:
+Versioning and changelog generation are now automated with **Release Please**:
 
-```bash
-cd /Users/irsalimran/Desktop/GenXAI-OSS/applications/genxbot/cli
-npm version patch
-```
+- Workflow: `.github/workflows/release-please.yml`
+- Config: `.release-please-config.json`
+- Manifest: `.release-please-manifest.json`
+- Changelog output: `cli/CHANGELOG.md`
 
-Use `minor` or `major` when needed:
+How it works:
 
-```bash
-npm version minor
-npm version major
-```
+1. Merge release-worthy commits into `main`.
+2. Release Please opens/updates a release PR with:
+   - bumped `cli/package.json` version
+   - updated `cli/CHANGELOG.md`
+   - release title/version metadata
+3. Merging that release PR creates a `cli-v*` tag and GitHub release.
+
+If you need to force-run manually, use **workflow_dispatch** for `release-please`.
 
 ---
 
-## 5) Sanity-check package contents
+## 5) Local sanity checks before pushing release changes
 
 ```bash
-cd /Users/irsalimran/Desktop/GenXAI-OSS/applications/genxbot/cli
-npm pack --dry-run
+cd /Users/iimran/Desktop/GenXBot/cli
+npm run release:validate
 ```
+
+This runs:
+
+- `npm run release:check` (version/changelog/tag consistency gates)
+- `npm pack --dry-run`
+- `npm publish --dry-run --access public`
 
 Confirm the tarball includes at least:
 
 - `bin/genxbot.js`
+- `scripts/release-check.cjs`
+- `CHANGELOG.md`
 - `package.json`
 
 ---
 
-## 6) Publish
+## 6) Publish (automated in CI)
+
+Publishing is now handled by GitHub Actions workflow:
+
+- Workflow: `.github/workflows/cli-release.yml`
+- Validation job runs on PRs touching CLI/release files.
+- Publish job only runs on tags matching `cli-v*` and only after validation passes.
+- Publish job requires `NPM_TOKEN` secret (recommended via protected `npm-release` environment).
+
+CI publish command:
 
 ```bash
-cd /Users/irsalimran/Desktop/GenXAI-OSS/applications/genxbot/cli
-npm publish
+npm publish --access public --provenance
 ```
 
-For scoped public packages:
-
-```bash
-npm publish --access public
-```
+Manual `npm publish` should only be used for emergencies.
 
 ---
 
@@ -172,17 +188,30 @@ npm version patch
 
 ---
 
-## 9) Recommended release workflow (manual)
+## 9) Recommended release workflow (automated)
 
 ```bash
-cd /Users/irsalimran/Desktop/GenXAI-OSS
+cd /Users/iimran/Desktop/GenXBot
 git checkout main
 git pull
 
-cd /Users/irsalimran/Desktop/GenXAI-OSS/applications/genxbot/cli
-npm version patch
-npm publish
+# Implement CLI changes and merge to main
+# Wait for/merge Release Please PR
+# Ensure tag cli-vX.Y.Z is created by release flow
 
-cd /Users/irsalimran/Desktop/GenXAI-OSS
-git push && git push --tags
+# CI then validates and publishes package from tag
 ```
+
+---
+
+## 10) Release validation gates summary
+
+CI blocks publish unless all checks pass:
+
+1. `cli/scripts/release-check.cjs`
+   - `cli/package.json` has valid semver
+   - `cli/CHANGELOG.md` contains matching version heading
+   - for tag builds, `cli-vX.Y.Z` must match package version
+2. `npm pack --dry-run`
+3. `npm publish --dry-run --access public`
+4. On tag builds only: real publish with `NPM_TOKEN`
