@@ -12,7 +12,8 @@ It supports:
 
 - creating coding runs from API/UI/channel messages
 - plan + action workflow with approval gates
-- channel-based commands (`/run`, `/status`, `/approve`, `/reject`)
+- channel-based commands (`/run`, `/status`, `/approve`, `/reject`, `/approve-all`)
+- web channel intent routing (chat vs command) with natural-language auto-run support
 - admin controls (allowlists, trust policies, audit, maintenance mode)
 - operational controls (idempotency cache, retry queue, health checks)
 
@@ -140,6 +141,14 @@ curl -X POST http://localhost:8000/api/v1/runs/<run_id>/approval \
 - `/status [run_id]`
 - `/approve <action_id> [run_id]`
 - `/reject <action_id> [run_id]`
+- `/approve-all [run_id]`
+
+### Web channel behavior (latest)
+
+- `web` channel classifies inbound text as either conversational chat or runnable command intent.
+- Natural-language task requests (without slash commands) can create runs directly.
+- For eligible web users, GenXBot auto-approves pending actions for these natural-language requests.
+- Contextual `yes/no` replies are supported for streamlined approval confirmation paths.
 
 ### Slack ingest example
 
@@ -176,6 +185,23 @@ curl -X POST http://localhost:8000/api/v1/runs/channels/telegram \
         "chat": { "id": -1001 },
         "text": "/status"
       }
+    }
+  }'
+```
+
+### Telegram native webhook adapter
+
+```bash
+curl -X POST http://localhost:8000/api/v1/runs/channels/telegram/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "update_id": 10001,
+    "message": {
+      "message_id": 77,
+      "from": { "id": 5001 },
+      "chat": { "id": -1001 },
+      "date": 1738460000,
+      "text": "/status"
     }
   }'
 ```
@@ -263,6 +289,22 @@ curl -X POST http://localhost:8000/api/v1/runs/channels/admin-audit/clear \
 
 ```bash
 curl http://localhost:8000/api/v1/runs/queue/health
+```
+
+### Async run queue create + status
+
+```bash
+curl -X POST http://localhost:8000/api/v1/runs/queue \
+  -H "Content-Type: application/json" \
+  -d '{
+    "goal": "Investigate failing CI tests and propose fixes",
+    "repo_path": ".",
+    "requested_by": "queue-demo"
+  }'
+```
+
+```bash
+curl http://localhost:8000/api/v1/runs/queue/<job_id>
 ```
 
 ### Outbound retry queue snapshot

@@ -116,15 +116,20 @@ Detailed release/publish instructions:
 - `GET /api/v1/runs/recipes` list available recipes
 - `GET /api/v1/runs/recipes/{recipe_id}` get recipe details
 - `POST /api/v1/runs/recipes` create recipe (admin)
+- `GET /api/v1/runs/skills` list available skills
+- `GET /api/v1/runs/skills/{skill_id}` get skill details
+- `POST /api/v1/runs/skills` create skill (admin)
 - `GET /api/v1/runs` list runs
 - `GET /api/v1/runs/{run_id}` run details
 - `POST /api/v1/runs/{run_id}/approval` approve/reject proposed action
-- `POST /api/v1/runs/channels/{channel}` ingest normalized channel event (Phase 1: `slack`, `telegram`)
+- `POST /api/v1/runs/{run_id}/rerun-failed-step` re-queue a rejected action for retry (role-gated)
+- `POST /api/v1/runs/channels/{channel}` ingest normalized channel event (`slack`, `telegram`, `web`)
+- `POST /api/v1/runs/channels/telegram/webhook` Telegram-native webhook adapter
 - `GET /api/v1/runs/channels/{channel}/trust-policy` read trust policy
 - `PUT /api/v1/runs/channels/{channel}/trust-policy` update trust policy (`pairing`/`open`, allowlist)
 - `GET /api/v1/runs/channels/{channel}/pairing/pending` list pending pairing codes
 - `POST /api/v1/runs/channels/{channel}/pairing/approve` approve pairing code
-- Channel command UX (message text): `/run`, `/status`, `/approve`, `/reject`
+- Channel command UX (message text): `/run`, `/status`, `/approve`, `/reject`, `/approve-all`
 - `GET /api/v1/runs/channels/sessions` inspect channel session → run mappings
 - `GET /api/v1/runs/channels/metrics` channel observability counters
 - `GET /api/v1/runs/channels/{channel}/maintenance` get channel maintenance mode
@@ -138,7 +143,9 @@ Detailed release/publish instructions:
 - `POST /api/v1/runs/channels/admin-audit/clear` clear admin audit log (admin protected)
 - `GET /api/v1/runs/channels/idempotency-cache` idempotency cache stats (admin protected)
 - `POST /api/v1/runs/channels/idempotency-cache/clear` clear idempotency cache (admin protected)
+- `POST /api/v1/runs/queue` enqueue async run creation job
 - `GET /api/v1/runs/queue/health` queue worker and backlog health snapshot
+- `GET /api/v1/runs/queue/{job_id}` inspect async run job status
 - `POST /api/v1/runs/channels/{channel}` supports optional `x-idempotency-key` header for dedupe
 
 ### Recipes (Phase 7B)
@@ -198,9 +205,15 @@ Behavior:
 
 Per-channel operational switch to temporarily block new channel ingests:
 
-- Supported channels: `slack`, `telegram`
+- Supported channels: `slack`, `telegram`, `web`
 - When enabled, inbound events return a maintenance response (`command: maintenance`) and skip run creation.
 - State updates are admin-audited (`channel_maintenance_update`).
+
+### Web channel behavior (latest)
+
+- `web` channel supports intent classification: small-talk/meta queries route to chat responses; task-like text routes to run creation.
+- For natural-language web task requests (without explicit slash commands), pending actions are auto-approved when user allowlist policy permits.
+- Web approval convenience supports plain `yes/no` replies in context for approve/reject flows.
 
 ## Notes
 

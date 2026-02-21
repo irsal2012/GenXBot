@@ -8,7 +8,7 @@
 
 - **Manus**: usually strongest for out-of-the-box autonomous experience and quickest end-user value.
 - **OpenClaw**: usually strongest for polished coding-agent workflow and turnkey developer UX.
-- **GenXBot**: strongest for control, governance, extensibility, and self-hosted operator ownership.
+- **GenXBot**: strongest for control, governance, extensibility, and self-hosted operator ownership — now with stronger onboarding/runtime UX than before.
 
 If your priority is **autonomy with minimal setup**, Manus/OpenClaw may feel better immediately.
 If your priority is **customization + policy/compliance + architecture control**, GenXBot is a strong base.
@@ -19,14 +19,16 @@ If your priority is **customization + policy/compliance + architecture control**
 
 | Area | GenXBot (this repo) | Manus | OpenClaw-style expectation |
 |---|---|---|---|
-| Out-of-box autonomous UX | Medium | High | High |
-| Coding-agent workflow polish | Medium | High | High |
+| Out-of-box autonomous UX | Medium–High | High | High |
+| Coding-agent workflow polish | Medium–High | High | High |
 | Governance controls (approval/policy/audit) | **High** | Medium–High (plan-dependent) | Medium |
 | Admin operations (maintenance/retry/health) | **High** | Medium | Medium |
 | Self-hosting & infra ownership | **High** | Low–Medium | Medium |
 | Deep extensibility (custom recipes/skills/APIs) | **High** | Medium | Medium–High |
 | Time-to-value for non-technical users | Medium | **High** | High |
-| Productized install/release lifecycle | Medium | High | High |
+| Productized install/release lifecycle | Medium–High | High | High |
+
+> Note: GenXBot ratings above were increased to reflect recent additions: interactive onboarding/doctor flow, daemon lifecycle commands, richer channel/web behavior, async queue endpoints, and expanded docs.
 
 ---
 
@@ -40,15 +42,19 @@ If your priority is **customization + policy/compliance + architecture control**
    - Admin role checks, protected endpoints, audit logs with retention controls.
 4. **Composable architecture**
    - API-first backend + recipes/skills model that is highly customizable.
+5. **Operator-ready channel/runtime controls**
+   - `web`/`slack`/`telegram` channel support, Telegram webhook adapter, command allowlisting, and command UX (`/approve-all`, status flows, idempotency-aware ingest).
+6. **Practical onboarding and lifecycle tooling**
+   - `genxbot onboard --interactive`, `genxbot doctor`, and daemon lifecycle management (`start|stop|status|logs|uninstall`).
 
 ---
 
-## Where Manus/OpenClaw usually feel ahead
+## Where Manus/OpenClaw still usually feel ahead
 
-1. **Turnkey autonomy UX**
-   - Cleaner defaults, less configuration burden, stronger first-run experience.
-2. **Lifecycle polish**
-   - Smoother installer/daemon/status/logs flows.
+1. **Turnkey autonomy UX consistency**
+   - Generally cleaner defaults and less variability across environments.
+2. **Lifecycle polish at scale**
+   - More battle-tested installers and operational UX in broader deployments.
 3. **Productized UI/flows**
    - Better run visualization, guided error handling, and onboarding ergonomics.
 4. **Release/distribution maturity**
@@ -74,29 +80,33 @@ Choose **OpenClaw** when you need:
 
 ---
 
-## GenXBot parity roadmap (toward Manus/OpenClaw feel)
+## GenXBot parity status (toward Manus/OpenClaw feel)
 
-### Priority 1 — Product UX and onboarding
-1. Add interactive onboarding (`genxbot onboard --interactive`) with environment validation.
-2. Add preflight diagnostics (`genxbot doctor`) for ports, tokens, dependencies.
-3. Improve first-run assistant experience with guided defaults and fallback explanations.
+### Completed
 
-### Priority 2 — CLI lifecycle completeness
-4. Implement `genxbot start|stop|status|logs|uninstall`.
-5. Add persistent daemon metadata and health status snapshots.
+#### Priority 1 — Product UX and onboarding
+1. ✅ Interactive onboarding (`genxbot onboard --interactive`) with environment validation.
+2. ✅ Preflight diagnostics (`genxbot doctor`) for ports, tokens, dependencies.
+3. ✅ Improved first-run assistant experience with guided defaults and fallback explanations.
 
-### Priority 3 — Frontend product polish
-6. Add richer run timeline and action state transitions.
-7. Add operator dashboards (audit, retry queue, maintenance mode, channel trust status).
-8. Add better remediation UX for failures (retry suggestions, root-cause hints).
+#### Priority 2 — CLI lifecycle completeness
+4. ✅ Implemented `genxbot start|stop|status|logs|uninstall`.
+5. ✅ Added persistent daemon metadata and health status snapshots.
 
-### Priority 4 — Release and distribution maturity
-9. Automate versioning/changelog and release workflows in CI.
-10. Automate npm package publish/tag checks and release validation gates.
+### Remaining gaps
+
+#### Priority 3 — Frontend product polish
+6. ◑ In progress: richer runtime/channel behavior (web chat-vs-command intent, yes/no approval shortcuts, auto-approve path for eligible web users).
+7. ◑ In progress: operator capabilities exposed via API (audit, retry queue, maintenance mode, trust policy, idempotency stats) with continued UI consolidation pending.
+8. ◑ In progress: retry/replay controls and queue health endpoints exist; deeper guided remediation UX remains.
+
+#### Priority 4 — Release and distribution maturity
+9. ◑ In progress: CI release automation present (`release-please`, CLI release workflows), with ongoing hardening.
+10. ◑ In progress: npm package publish/tag and validation checks are present, with further guardrails to be added.
 
 ---
 
 ## Bottom line
 
-GenXBot is already strong in **control-plane quality** (governance, reliability, operations).  
-To feel Manus/OpenClaw-like at the product level, the largest gains now come from **onboarding polish, lifecycle UX, and release automation**.
+GenXBot is strong in **control-plane quality** (governance, reliability, operations) and has materially improved in onboarding/lifecycle usability.  
+Remaining deltas vs Manus/OpenClaw are now mostly about **end-to-end product polish consistency and advanced UX refinement**, rather than missing foundational platform capabilities.
