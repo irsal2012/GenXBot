@@ -29,6 +29,10 @@ genxbot help
 genxbot onboard
 genxbot onboard --interactive
 genxbot doctor
+genxbot start
+genxbot status
+genxbot logs --lines 50
+genxbot stop
 ```
 
 Optional daemon setup (macOS/Linux):
@@ -41,6 +45,8 @@ This creates:
 
 - `~/.genxbot/.env`
 - `~/.genxbot/logs/`
+- `~/.genxbot/daemon.meta.json`
+- `~/.genxbot/health.snapshot.json`
 
 Recommended flow:
 

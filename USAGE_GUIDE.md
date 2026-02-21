@@ -51,6 +51,10 @@ If you installed the CLI globally:
 genxbot onboard
 genxbot onboard --interactive
 genxbot doctor
+genxbot start
+genxbot status
+genxbot logs --lines 100
+genxbot stop
 ```
 
 Or with daemon setup (macOS/Linux):
@@ -63,6 +67,9 @@ Notes:
 
 - `genxbot onboard --interactive` guides env setup with validation (including `AGENT_RUNTIME_MODE`).
 - `genxbot doctor` checks dependencies, env readiness, ports (`8000`, `5173`), and backend API reachability.
+- `genxbot status` updates and prints a health snapshot (`~/.genxbot/health.snapshot.json`).
+- `genxbot logs` reads daemon logs from `~/.genxbot/logs/daemon.out.log` and `daemon.err.log`.
+- `genxbot uninstall --yes` stops daemon(s) and removes `~/.genxbot` data.
 
 Additional onboarding UX improvements:
 
@@ -75,6 +82,11 @@ This initializes:
 
 - `~/.genxbot/.env`
 - `~/.genxbot/logs/`
+
+Lifecycle metadata:
+
+- `~/.genxbot/daemon.meta.json` (daemon manager/pid/timestamps/log paths)
+- `~/.genxbot/health.snapshot.json` (latest runtime/API health snapshot)
 
 ---
 

@@ -71,6 +71,12 @@ genxbot onboard --interactive
 # optional daemon install on macOS/Linux
 genxbot onboard --install-daemon
 genxbot doctor
+genxbot start
+genxbot status
+genxbot logs --lines 200
+genxbot stop
+# destructive cleanup (requires explicit confirmation)
+genxbot uninstall --yes
 ```
 
 Interactive onboarding highlights:
@@ -84,6 +90,12 @@ Doctor preflight checks include:
 - Core dependencies (`node`, `npm`, `python`, `pip`, `uvicorn`, `fastapi` importability).
 - Runtime files/paths (`~/.genxbot/.env`, log dir, backend/frontend directories, dependency installation hints).
 - Token readiness (masked presence checks), default ports (`8000`, `5173`), and backend API reachability.
+
+Daemon lifecycle additions:
+
+- `genxbot start|stop|status|logs|uninstall` for end-to-end runtime control.
+- Persistent daemon metadata at `~/.genxbot/daemon.meta.json`.
+- Health snapshots at `~/.genxbot/health.snapshot.json` (updated on lifecycle/status commands).
 
 ### Intended npm publish flow
 
