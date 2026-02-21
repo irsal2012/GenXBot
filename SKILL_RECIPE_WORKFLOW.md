@@ -16,36 +16,16 @@ In current implementation, skill/recipe resolution is done by backend code first
 
 ```mermaid
 flowchart TD
-    A[Incoming RunTaskRequest\nPOST /api/v1/runs] --> B[_prepare_resolved_run_request]
-
-    B --> C[_route_skill_from_goal]
-    C --> D{skill_id already set\nor trigger matched?}
-    D -- No --> E[Keep original request]
-    D -- Yes --> F[Set/keep skill_id]
-
-    E --> G[_resolve_skill_request]
-    F --> G
-
-    G --> H[Render skill templates\n(goal/context/action_templates)]
-    H --> I[Apply skill tool_allowlist\nif request allowlist is empty]
-    I --> J{Skill has recipe_id\nand request.recipe_id empty?}
-    J -- Yes --> K[Inject recipe_id from skill]
-    J -- No --> L[Keep existing recipe_id]
-
-    K --> M[_resolve_recipe_request]
-    L --> M
-    M --> N{recipe_id exists?}
-    N -- No --> O[Skip recipe resolution]
-    N -- Yes --> P[Render recipe templates\n(goal/context/action_templates)]
-
-    O --> Q[Resolved request ready]
-    P --> Q
-
-    Q --> R[orchestrator.create_run]
-    R --> S[_build_genxai_stack]
-    S --> T[Filter runtime tools\nby resolved tool_allowlist]
-    T --> U[Run GenXAI pipeline\n(single/multi/hybrid)]
-    U --> V[Proposed actions + approvals + execution timeline]
+    A[RunTaskRequest] --> B[prepare_resolved_run_request]
+    B --> C[route_skill_from_goal]
+    C --> D[resolve_skill_request]
+    D --> E[resolve_recipe_request]
+    E --> F[resolved request]
+    F --> G[orchestrator.create_run]
+    G --> H[build_genxai_stack]
+    H --> I[filter tools by tool_allowlist]
+    I --> J[GenXAI runtime execute]
+    J --> K[proposed actions and approvals]
 ```
 
 This reflects the current backend implementation: **skill and recipe are resolved first, then runtime/LLM executes**.
