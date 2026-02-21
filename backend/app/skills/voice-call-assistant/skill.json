@@ -1,0 +1,12 @@
+{
+  "id": "voice-call-assistant",
+  "name": "Voice Call Assistant",
+  "description": "Route voice-call automation requests to the voice-call recipe.",
+  "goal_template": "Execute the voice-call workflow and summarize call outcomes",
+  "context_template": "focus=voice-call\npriority={priority}",
+  "recipe_id": "voice-call",
+  "trigger_phrases": ["voice call", "call workflow", "phone call", "dial"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["voice", "communication"],
+  "enabled": true
+}

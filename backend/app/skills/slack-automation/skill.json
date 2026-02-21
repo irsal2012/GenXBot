@@ -1,0 +1,26 @@
+{
+  "id": "slack-automation",
+  "name": "Slack Automation",
+  "description": "Handle Slack workflow and messaging automation tasks.",
+  "goal_template": "Execute the Slack workflow for this repository and summarize outcomes",
+  "context_template": "focus=slack\npriority={priority}",
+  "recipe_id": "slack",
+  "trigger_phrases": [
+    "slack",
+    "slack bot",
+    "slack integration",
+    "slack workflow"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "integration",
+    "slack"
+  ],
+  "enabled": true
+}

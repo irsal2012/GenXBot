@@ -1,0 +1,12 @@
+{
+  "id": "obsidian-automation",
+  "name": "Obsidian Automation",
+  "description": "Route Obsidian vault and note workflows to the Obsidian recipe.",
+  "goal_template": "Execute the Obsidian workflow and summarize note updates",
+  "context_template": "focus=obsidian\npriority={priority}",
+  "recipe_id": "obsidian",
+  "trigger_phrases": ["obsidian", "vault", "markdown notes", "knowledge base"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "regex_matcher", "data_validator"],
+  "tags": ["notes", "knowledge"],
+  "enabled": true
+}

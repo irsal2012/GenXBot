@@ -1,0 +1,26 @@
+{
+  "id": "summarize-content",
+  "name": "Summarize Content",
+  "description": "Summarize documents, logs, and content via the summarize recipe.",
+  "goal_template": "Summarize the provided content and return concise key points",
+  "context_template": "focus=summarization\npriority={priority}",
+  "recipe_id": "summarize",
+  "trigger_phrases": [
+    "summarize",
+    "summary",
+    "tldr",
+    "key points"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "data_validator",
+    "regex_matcher"
+  ],
+  "tags": [
+    "productivity",
+    "summarization"
+  ],
+  "enabled": true
+}

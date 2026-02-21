@@ -1,0 +1,26 @@
+{
+  "id": "discord-automation",
+  "name": "Discord Automation",
+  "description": "Handle Discord-related coding and workflow requests through the Discord recipe.",
+  "goal_template": "Execute the Discord workflow for this repository and summarize outcomes",
+  "context_template": "focus=discord\npriority={priority}",
+  "recipe_id": "discord",
+  "trigger_phrases": [
+    "discord",
+    "discord bot",
+    "discord integration",
+    "discord workflow"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "integration",
+    "discord"
+  ],
+  "enabled": true
+}

@@ -1,0 +1,26 @@
+{
+  "id": "test-hardening-skill",
+  "name": "Test Hardening Skill",
+  "description": "Route requests about failing or flaky tests to the test-hardening recipe.",
+  "goal_template": "Stabilize and harden tests for {target_area} and summarize gaps",
+  "context_template": "focus=testing\npriority={priority}",
+  "recipe_id": "test-hardening",
+  "trigger_phrases": [
+    "fix tests",
+    "failing tests",
+    "flaky tests",
+    "test hardening"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "testing",
+    "quality"
+  ],
+  "enabled": true
+}

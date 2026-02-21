@@ -1,0 +1,12 @@
+{
+  "id": "trello-automation",
+  "name": "Trello Automation",
+  "description": "Route Trello board and task requests to the Trello recipe workflow.",
+  "goal_template": "Execute the Trello workflow and summarize board/task updates",
+  "context_template": "focus=trello\npriority={priority}",
+  "recipe_id": "trello",
+  "trigger_phrases": ["trello", "board", "card", "kanban"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["integration", "project-management"],
+  "enabled": true
+}

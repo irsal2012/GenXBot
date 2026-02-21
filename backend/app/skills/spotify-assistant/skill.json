@@ -1,0 +1,12 @@
+{
+  "id": "spotify-assistant",
+  "name": "Spotify Assistant",
+  "description": "Route Spotify playback and music automation requests to spotify-player recipe.",
+  "goal_template": "Execute the Spotify workflow and summarize playback actions",
+  "context_template": "focus=spotify\npriority={priority}",
+  "recipe_id": "spotify-player",
+  "trigger_phrases": ["spotify", "play music", "playlist", "song"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["music", "media"],
+  "enabled": true
+}

@@ -1,0 +1,12 @@
+{
+  "id": "weather-assistant",
+  "name": "Weather Assistant",
+  "description": "Route weather queries to the weather recipe workflow.",
+  "goal_template": "Execute the weather workflow and summarize the forecast insights",
+  "context_template": "focus=weather\npriority={priority}",
+  "recipe_id": "weather",
+  "trigger_phrases": ["weather", "forecast", "temperature", "rain"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "data_validator"],
+  "tags": ["utility", "weather"],
+  "enabled": true
+}

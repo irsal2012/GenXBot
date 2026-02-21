@@ -1,0 +1,12 @@
+{
+  "id": "video-frame-extractor",
+  "name": "Video Frame Extractor",
+  "description": "Route frame extraction tasks to the video-frames recipe.",
+  "goal_template": "Execute the video frame extraction workflow and summarize produced frames",
+  "context_template": "focus=video\npriority={priority}",
+  "recipe_id": "video-frames",
+  "trigger_phrases": ["video frames", "extract frames", "keyframes", "frame capture"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["video", "media"],
+  "enabled": true
+}

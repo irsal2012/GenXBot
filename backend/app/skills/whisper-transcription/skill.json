@@ -1,0 +1,12 @@
+{
+  "id": "whisper-transcription",
+  "name": "Whisper Transcription",
+  "description": "Route speech-to-text requests to the OpenAI Whisper recipe.",
+  "goal_template": "Execute the Whisper transcription workflow and summarize transcript output",
+  "context_template": "focus=transcription\npriority={priority}",
+  "recipe_id": "openai-whisper",
+  "trigger_phrases": ["transcribe", "whisper", "audio to text", "speech to text"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["audio", "transcription"],
+  "enabled": true
+}

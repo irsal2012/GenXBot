@@ -1,0 +1,26 @@
+{
+  "id": "notion-automation",
+  "name": "Notion Automation",
+  "description": "Handle Notion automation and content workflow tasks.",
+  "goal_template": "Execute the Notion workflow for this repository and summarize outcomes",
+  "context_template": "focus=notion\npriority={priority}",
+  "recipe_id": "notion",
+  "trigger_phrases": [
+    "notion",
+    "notion page",
+    "notion integration",
+    "workspace notes"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "integration",
+    "notion"
+  ],
+  "enabled": true
+}

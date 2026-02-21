@@ -1,0 +1,26 @@
+{
+  "id": "github-automation",
+  "name": "GitHub Automation",
+  "description": "Handle GitHub workflow and repository automation tasks.",
+  "goal_template": "Execute the GitHub workflow for this repository and summarize outcomes",
+  "context_template": "focus=github\npriority={priority}",
+  "recipe_id": "github",
+  "trigger_phrases": [
+    "github",
+    "github issues",
+    "pull request",
+    "repo automation"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "integration",
+    "github"
+  ],
+  "enabled": true
+}
