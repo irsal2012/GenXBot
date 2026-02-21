@@ -91,6 +91,23 @@ type AuditEntry = {
   detail: string
 }
 
+type AdminAuditEntry = {
+  id: string
+  timestamp: string
+  actor: string
+  actor_role: UserRole
+  action: string
+  origin: string
+  trace_id: string
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+}
+
+type AdminAuditSnapshot = {
+  entries: number
+  max_entries: number
+}
+
 type ChannelInboundResponse = {
   channel: 'slack' | 'telegram' | 'web'
   event_type: string
@@ -133,6 +150,30 @@ type ChannelMetricsSnapshot = {
 type OutboundRetryQueueSnapshot = {
   queued: number
   dead_lettered: number
+  dead_letters?: OutboundRetryJob[]
+}
+
+type OutboundRetryJob = {
+  id: string
+  channel: 'slack' | 'telegram'
+  channel_id: string
+  text: string
+  thread_id?: string | null
+  attempts: number
+  max_attempts: number
+  last_error?: string | null
+}
+
+type ChannelMaintenanceMode = {
+  channel: 'slack' | 'telegram' | 'web'
+  enabled: boolean
+  reason: string
+}
+
+type ChannelTrustStatus = {
+  channel: 'slack' | 'telegram' | 'web'
+  policy: ChannelTrustPolicy
+  pending_count: number
 }
 
 type ChatMessage = {
@@ -144,6 +185,63 @@ type ChatMessage = {
 
 const pct = (value: number) => `${(value * 100).toFixed(1)}%`
 const sec = (value: number) => `${value.toFixed(2)}s`
+
+const channels: Array<'slack' | 'telegram' | 'web'> = ['slack', 'telegram', 'web']
+const statusOrder: Array<ProposedAction['status']> = ['pending', 'approved', 'executed', 'rejected']
+const timelineToneOrder: Array<'all' | 'ok' | 'warn' | 'error' | 'info'> = ['all', 'ok', 'warn', 'error', 'info']
+
+const relativeTime = (timestamp: string) => {
+  const now = Date.now()
+  const then = new Date(timestamp).getTime()
+  const diffSeconds = Math.max(0, Math.floor((now - then) / 1000))
+  if (diffSeconds < 60) return `${diffSeconds}s ago`
+  const minutes = Math.floor(diffSeconds / 60)
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+}
+
+function timelineEventTone(event: TimelineEvent): 'ok' | 'warn' | 'error' | 'info' {
+  const text = `${event.event} ${event.content}`.toLowerCase()
+  if (text.includes('fail') || text.includes('error') || text.includes('rejected')) return 'error'
+  if (text.includes('approval') || text.includes('awaiting')) return 'warn'
+  if (text.includes('complete') || text.includes('executed') || text.includes('approved')) return 'ok'
+  return 'info'
+}
+
+function remediationHints(action: ProposedAction): { rootCause: string; suggestions: string[] } {
+  const details = `${action.description} ${action.command ?? ''}`.toLowerCase()
+  if (details.includes('npm') || details.includes('pytest') || details.includes('test')) {
+    return {
+      rootCause: 'Likely test or dependency mismatch in the target repository.',
+      suggestions: ['Review command output artifact for first failing assertion.', 'Re-run after validating local dependencies and lockfile drift.'],
+    }
+  }
+  if (details.includes('permission') || details.includes('denied') || details.includes('auth')) {
+    return {
+      rootCause: 'Likely permission or credential issue.',
+      suggestions: ['Validate token/credential availability in environment.', 'Check channel trust policy and approver allowlist before retrying.'],
+    }
+  }
+  if (action.action_type === 'edit') {
+    return {
+      rootCause: 'Patch may not match current file context or target file path.',
+      suggestions: ['Inspect diff artifact and file path for stale context.', 'Retry with refreshed repository state or narrower patch scope.'],
+    }
+  }
+  return {
+    rootCause: 'Execution context drift or transient runtime issue.',
+    suggestions: ['Re-run failed step after reviewing timeline around failure event.', 'If repeated, open maintenance mode and inspect retry/dead-letter queue.'],
+  }
+}
+
+function stateTone(status: ProposedAction['status']): 'warn' | 'ok' | 'error' | 'info' {
+  if (status === 'pending') return 'warn'
+  if (status === 'approved' || status === 'executed') return 'ok'
+  if (status === 'rejected') return 'error'
+  return 'info'
+}
 
 function parseDiffArtifact(content: string): { before: string; after: string } | null {
   const beforeMarker = '--- before'
@@ -196,6 +294,15 @@ function App() {
   const [adminPendingCodes, setAdminPendingCodes] = useState<PendingPairingCode[]>([])
   const [adminMetrics, setAdminMetrics] = useState<ChannelMetricsSnapshot | null>(null)
   const [adminRetryQueue, setAdminRetryQueue] = useState<OutboundRetryQueueSnapshot | null>(null)
+  const [adminDeadLetters, setAdminDeadLetters] = useState<OutboundRetryJob[]>([])
+  const [adminAuditEntries, setAdminAuditEntries] = useState<AdminAuditEntry[]>([])
+  const [adminAuditStats, setAdminAuditStats] = useState<AdminAuditSnapshot | null>(null)
+  const [maintenanceModes, setMaintenanceModes] = useState<Record<string, ChannelMaintenanceMode>>({})
+  const [maintenanceEnabledInput, setMaintenanceEnabledInput] = useState(false)
+  const [maintenanceReasonInput, setMaintenanceReasonInput] = useState('')
+  const [channelTrustStatuses, setChannelTrustStatuses] = useState<ChannelTrustStatus[]>([])
+  const [operatorLoading, setOperatorLoading] = useState(false)
+  const [operatorError, setOperatorError] = useState('')
   const [activeView, setActiveView] = useState<'overview' | 'chat' | 'runs'>('overview')
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = useState('')
@@ -205,6 +312,10 @@ function App() {
   const [runsList, setRunsList] = useState<RunSession[]>([])
   const [runsLoading, setRunsLoading] = useState(false)
   const [runsError, setRunsError] = useState('')
+  const [timelineToneFilter, setTimelineToneFilter] = useState<'all' | 'ok' | 'warn' | 'error' | 'info'>('all')
+  const [timelineAgentFilter, setTimelineAgentFilter] = useState('all')
+  const [timelineQuery, setTimelineQuery] = useState('')
+  const [timelineSort, setTimelineSort] = useState<'newest' | 'oldest'>('newest')
   const [chatUserId] = useState(() => {
     const stored = window.localStorage.getItem('genxbot_user_id')
     if (stored) return stored
@@ -215,6 +326,79 @@ function App() {
   })
 
   const apiBase = useMemo(() => import.meta.env.VITE_API_BASE ?? 'http://localhost:8000', [])
+  const adminHeaders = useMemo(
+    () => ({
+      'x-admin-actor': actor,
+      'x-admin-role': actorRole,
+    }),
+    [actor, actorRole],
+  )
+
+  const actionStatusCounts = useMemo(() => {
+    const counts: Record<ProposedAction['status'], number> = {
+      pending: 0,
+      approved: 0,
+      executed: 0,
+      rejected: 0,
+    }
+    if (!run) return counts
+    for (const action of run.pending_actions) counts[action.status] += 1
+    return counts
+  }, [run])
+
+  const remediationCandidates = useMemo(
+    () => (run ? run.pending_actions.filter((action) => action.status === 'rejected') : []),
+    [run],
+  )
+
+  const timelineAgents = useMemo(() => {
+    if (!run) return []
+    return [...new Set(run.timeline.map((event) => event.agent))]
+  }, [run])
+
+  const timelineCounts = useMemo(() => {
+    const counts: Record<'ok' | 'warn' | 'error' | 'info', number> = {
+      ok: 0,
+      warn: 0,
+      error: 0,
+      info: 0,
+    }
+    if (!run) return counts
+    for (const event of run.timeline) {
+      counts[timelineEventTone(event)] += 1
+    }
+    return counts
+  }, [run])
+
+  const filteredTimeline = useMemo(() => {
+    if (!run) return []
+    let events = [...run.timeline]
+    if (timelineToneFilter !== 'all') {
+      events = events.filter((event) => timelineEventTone(event) === timelineToneFilter)
+    }
+    if (timelineAgentFilter !== 'all') {
+      events = events.filter((event) => event.agent === timelineAgentFilter)
+    }
+    if (timelineQuery.trim()) {
+      const query = timelineQuery.trim().toLowerCase()
+      events = events.filter((event) => `${event.event} ${event.content}`.toLowerCase().includes(query))
+    }
+    events.sort((a, b) => {
+      const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      return timelineSort === 'oldest' ? diff : -diff
+    })
+    return events
+  }, [run, timelineAgentFilter, timelineQuery, timelineSort, timelineToneFilter])
+
+  const maintenanceEnabledCount = useMemo(
+    () => Object.values(maintenanceModes).filter((mode) => mode.enabled).length,
+    [maintenanceModes],
+  )
+
+  const openTrustChannels = useMemo(
+    () => channelTrustStatuses.filter((status) => status.policy.dm_policy === 'open').length,
+    [channelTrustStatuses],
+  )
 
   const appendChatMessage = (message: ChatMessage) => {
     setChatMessages((prev) => [...prev, message])
@@ -438,6 +622,40 @@ function App() {
     await loadAuditLog(updated.id)
   }
 
+  const rerunAllRejectedActions = async () => {
+    if (!run) return
+    const rejected = run.pending_actions.filter((action) => action.status === 'rejected')
+    if (rejected.length === 0) return
+    setLoading(true)
+    setError('')
+    try {
+      for (const action of rejected) {
+        const res = await fetch(`${apiBase}/api/v1/runs/${run.id}/rerun-failed-step`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action_id: action.id,
+            comment: 'Bulk re-run requested from remediation center',
+            actor,
+            actor_role: actorRole,
+          }),
+        })
+        if (!res.ok) {
+          throw new Error(`Failed to re-run failed step ${action.id} (${res.status})`)
+        }
+        const updated = (await res.json()) as RunSession
+        setRun(updated)
+      }
+      await loadMetrics()
+      await loadAuditLog(run.id)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Unknown bulk retry error'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const triggerConnectorRun = async () => {
     setTriggerLoading(true)
     setError('')
@@ -480,30 +698,100 @@ function App() {
   }
 
   const loadAdminPanelData = async () => {
-    const [policyRes, pendingRes, allowlistRes, metricsRes, retryRes] = await Promise.all([
-      fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/trust-policy`),
-      fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/pairing/pending`),
-      fetch(`${apiBase}/api/v1/runs/channels/approver-allowlist`),
-      fetch(`${apiBase}/api/v1/runs/channels/metrics`),
-      fetch(`${apiBase}/api/v1/runs/channels/outbound-retry`),
-    ])
+    setOperatorLoading(true)
+    setOperatorError('')
+    try {
+      const [policyRes, pendingRes, allowlistRes, metricsRes, retryRes, deadRes, auditRes, auditStatsRes] =
+        await Promise.all([
+          fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/trust-policy`, { headers: adminHeaders }),
+          fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/pairing/pending`, { headers: adminHeaders }),
+          fetch(`${apiBase}/api/v1/runs/channels/approver-allowlist`, { headers: adminHeaders }),
+          fetch(`${apiBase}/api/v1/runs/channels/metrics`),
+          fetch(`${apiBase}/api/v1/runs/channels/outbound-retry`),
+          fetch(`${apiBase}/api/v1/runs/channels/outbound-retry/deadletters`),
+          fetch(`${apiBase}/api/v1/runs/channels/admin-audit`, { headers: adminHeaders }),
+          fetch(`${apiBase}/api/v1/runs/channels/admin-audit/stats`, { headers: adminHeaders }),
+        ])
 
-    if (!policyRes.ok || !pendingRes.ok || !allowlistRes.ok || !metricsRes.ok || !retryRes.ok) {
-      throw new Error('Failed to load admin panel data')
+      if (
+        !policyRes.ok ||
+        !pendingRes.ok ||
+        !allowlistRes.ok ||
+        !metricsRes.ok ||
+        !retryRes.ok ||
+        !deadRes.ok ||
+        !auditRes.ok ||
+        !auditStatsRes.ok
+      ) {
+        throw new Error('Failed to load operator dashboard data')
+      }
+
+      const policy = (await policyRes.json()) as ChannelTrustPolicy
+      const pending = (await pendingRes.json()) as PendingPairingCode[]
+      const allowlist = (await allowlistRes.json()) as { users: string[] }
+      const metrics = (await metricsRes.json()) as ChannelMetricsSnapshot
+      const retry = (await retryRes.json()) as OutboundRetryQueueSnapshot
+      const deadLetters = (await deadRes.json()) as OutboundRetryJob[]
+      const adminAudit = (await auditRes.json()) as AdminAuditEntry[]
+      const auditStats = (await auditStatsRes.json()) as AdminAuditSnapshot
+
+      const trustStatuses = await Promise.all(
+        channels.map(async (channel) => {
+          const [policyResByChannel, pendingResByChannel] = await Promise.all([
+            fetch(`${apiBase}/api/v1/runs/channels/${channel}/trust-policy`, { headers: adminHeaders }),
+            fetch(`${apiBase}/api/v1/runs/channels/${channel}/pairing/pending`, { headers: adminHeaders }),
+          ])
+          if (!policyResByChannel.ok || !pendingResByChannel.ok) {
+            throw new Error(`Failed to load trust status for ${channel}`)
+          }
+          const policyByChannel = (await policyResByChannel.json()) as ChannelTrustPolicy
+          const pendingByChannel = (await pendingResByChannel.json()) as PendingPairingCode[]
+          return {
+            channel,
+            policy: policyByChannel,
+            pending_count: pendingByChannel.length,
+          } as ChannelTrustStatus
+        }),
+      )
+
+      const maintenanceEntries = await Promise.all(
+        channels.map(async (channel) => {
+          const res = await fetch(`${apiBase}/api/v1/runs/channels/${channel}/maintenance`, {
+            headers: adminHeaders,
+          })
+          if (!res.ok) {
+            throw new Error(`Failed to load maintenance mode for ${channel}`)
+          }
+          return (await res.json()) as ChannelMaintenanceMode
+        }),
+      )
+
+      const maintenanceMap = maintenanceEntries.reduce<Record<string, ChannelMaintenanceMode>>((acc, mode) => {
+        acc[mode.channel] = mode
+        return acc
+      }, {})
+
+      setAdminDmPolicy(policy.dm_policy)
+      setAdminAllowFrom(policy.allow_from.join(','))
+      setAdminPendingCodes(pending)
+      setAdminApproverUsers(allowlist.users.join(','))
+      setAdminMetrics(metrics)
+      setAdminRetryQueue(retry)
+      setAdminDeadLetters(deadLetters)
+      setAdminAuditEntries(adminAudit)
+      setAdminAuditStats(auditStats)
+      setChannelTrustStatuses(trustStatuses)
+      setMaintenanceModes(maintenanceMap)
+      const selected = maintenanceMap[adminChannel]
+      if (selected) {
+        setMaintenanceEnabledInput(selected.enabled)
+        setMaintenanceReasonInput(selected.reason)
+      }
+    } catch (e) {
+      setOperatorError(e instanceof Error ? e.message : 'Unknown operator dashboard error')
+    } finally {
+      setOperatorLoading(false)
     }
-
-    const policy = (await policyRes.json()) as ChannelTrustPolicy
-    const pending = (await pendingRes.json()) as PendingPairingCode[]
-    const allowlist = (await allowlistRes.json()) as { users: string[] }
-    const metrics = (await metricsRes.json()) as ChannelMetricsSnapshot
-    const retry = (await retryRes.json()) as OutboundRetryQueueSnapshot
-
-    setAdminDmPolicy(policy.dm_policy)
-    setAdminAllowFrom(policy.allow_from.join(','))
-    setAdminPendingCodes(pending)
-    setAdminApproverUsers(allowlist.users.join(','))
-    setAdminMetrics(metrics)
-    setAdminRetryQueue(retry)
   }
 
   const saveTrustPolicy = async () => {
@@ -513,7 +801,7 @@ function App() {
       .filter(Boolean)
     const res = await fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/trust-policy`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify({ dm_policy: adminDmPolicy, allow_from: allowFrom }),
     })
     if (!res.ok) {
@@ -525,7 +813,7 @@ function App() {
   const approvePairingCode = async (code: string) => {
     const res = await fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/pairing/approve`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify({ code, actor }),
     })
     if (!res.ok) {
@@ -541,11 +829,45 @@ function App() {
       .filter(Boolean)
     const res = await fetch(`${apiBase}/api/v1/runs/channels/approver-allowlist`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
       body: JSON.stringify({ users }),
     })
     if (!res.ok) {
       throw new Error(`Failed to update approver allowlist (${res.status})`)
+    }
+    await loadAdminPanelData()
+  }
+
+  const updateMaintenanceMode = async () => {
+    const res = await fetch(`${apiBase}/api/v1/runs/channels/${adminChannel}/maintenance`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...adminHeaders },
+      body: JSON.stringify({ enabled: maintenanceEnabledInput, reason: maintenanceReasonInput }),
+    })
+    if (!res.ok) {
+      throw new Error(`Failed to update maintenance mode (${res.status})`)
+    }
+    await loadAdminPanelData()
+  }
+
+  const replayDeadLetter = async (jobId: string) => {
+    const res = await fetch(`${apiBase}/api/v1/runs/channels/outbound-retry/replay/${jobId}`, {
+      method: 'POST',
+      headers: adminHeaders,
+    })
+    if (!res.ok) {
+      throw new Error(`Failed to replay dead letter (${res.status})`)
+    }
+    await loadAdminPanelData()
+  }
+
+  const clearAdminAudit = async () => {
+    const res = await fetch(`${apiBase}/api/v1/runs/channels/admin-audit/clear`, {
+      method: 'POST',
+      headers: adminHeaders,
+    })
+    if (!res.ok) {
+      throw new Error(`Failed to clear admin audit (${res.status})`)
     }
     await loadAdminPanelData()
   }
@@ -620,6 +942,18 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [run?.id])
+
+  useEffect(() => {
+    const selected = maintenanceModes[adminChannel]
+    if (!selected) return
+    setMaintenanceEnabledInput(selected.enabled)
+    setMaintenanceReasonInput(selected.reason)
+  }, [adminChannel, maintenanceModes])
+
+  useEffect(() => {
+    void loadAdminPanelData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminChannel])
 
   return (
     <div className="dashboard">
@@ -911,6 +1245,10 @@ function App() {
                 <strong>Active User:</strong> {actor} ({actorRole})
               </p>
               <p className="muted">Live log stream: {runPolling ? 'active (2s polling)' : 'idle'}</p>
+              <p className="muted">
+                Timeline footprint: {run.timeline.length} events · errors {timelineCounts.error} · warnings{' '}
+                {timelineCounts.warn}
+              </p>
             </section>
 
             <section className="card">
@@ -926,6 +1264,34 @@ function App() {
 
             <section className="card span-2">
               <h2>Approval Queue</h2>
+              <div className="row">
+                {statusOrder.map((status) => (
+                  <span key={status} className={`pill tone-${stateTone(status)}`}>
+                    {status}: {actionStatusCounts[status]}
+                  </span>
+                ))}
+              </div>
+              <div className="transition-grid">
+                <div className="transition-card">
+                  <span className="metric-label">Pending</span>
+                  <strong>{actionStatusCounts.pending}</strong>
+                </div>
+                <div className="transition-arrow">→</div>
+                <div className="transition-card">
+                  <span className="metric-label">Approved</span>
+                  <strong>{actionStatusCounts.approved}</strong>
+                </div>
+                <div className="transition-arrow">→</div>
+                <div className="transition-card">
+                  <span className="metric-label">Executed</span>
+                  <strong>{actionStatusCounts.executed}</strong>
+                </div>
+                <div className="transition-arrow">↘</div>
+                <div className="transition-card tone-error-card">
+                  <span className="metric-label">Rejected</span>
+                  <strong>{actionStatusCounts.rejected}</strong>
+                </div>
+              </div>
               {run.pending_actions.length === 0 ? (
                 <p className="muted">No actions awaiting approval.</p>
               ) : (
@@ -937,10 +1303,16 @@ function App() {
                   </div>
                   {run.pending_actions.map((action) => (
                     <div key={action.id} className="action">
+                      {(() => {
+                        const remediation = remediationHints(action)
+                        return (
+                          <>
                       <p>
                         <strong>{action.action_type.toUpperCase()}</strong>: {action.description}
                       </p>
-                      <p className="muted">Status: {action.status}</p>
+                      <p className="muted">
+                        Status: <span className={`pill tone-${stateTone(action.status)}`}>{action.status}</span>
+                      </p>
                       {action.command && <code>{action.command}</code>}
                       {action.file_path && <code>{action.file_path}</code>}
                       {action.status === 'pending' && (
@@ -952,28 +1324,135 @@ function App() {
                         </div>
                       )}
                       {action.status === 'rejected' && (
-                        <div className="row">
-                          <button onClick={() => rerunFailedAction(action.id)}>Re-run from failed step</button>
+                        <div className="remediation-box">
+                          <p>
+                            <strong>Root-cause hint:</strong> {remediation.rootCause}
+                          </p>
+                          <ul>
+                            {remediation.suggestions.map((hint) => (
+                              <li key={hint}>{hint}</li>
+                            ))}
+                          </ul>
+                          <div className="row">
+                            <button onClick={() => rerunFailedAction(action.id)}>Re-run from failed step</button>
+                          </div>
                         </div>
                       )}
+                          </>
+                        )
+                      })()}
                     </div>
                   ))}
                 </>
+              )}
+              {remediationCandidates.length > 0 && (
+                <p className="muted">{remediationCandidates.length} failed action(s) with remediation guidance.</p>
               )}
             </section>
 
             <section className="card span-2">
               <h2>Timeline</h2>
+              <div className="timeline-toolbar">
+                <label>
+                  Tone
+                  <select
+                    value={timelineToneFilter}
+                    onChange={(e) =>
+                      setTimelineToneFilter(e.target.value as 'all' | 'ok' | 'warn' | 'error' | 'info')
+                    }
+                  >
+                    {timelineToneOrder.map((tone) => (
+                      <option key={tone} value={tone}>
+                        {tone}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Agent
+                  <select value={timelineAgentFilter} onChange={(e) => setTimelineAgentFilter(e.target.value)}>
+                    <option value="all">all</option>
+                    {timelineAgents.map((agentName) => (
+                      <option key={agentName} value={agentName}>
+                        {agentName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Search
+                  <input
+                    value={timelineQuery}
+                    onChange={(e) => setTimelineQuery(e.target.value)}
+                    placeholder="event, failure, approval..."
+                  />
+                </label>
+                <label>
+                  Order
+                  <select value={timelineSort} onChange={(e) => setTimelineSort(e.target.value as 'newest' | 'oldest')}>
+                    <option value="newest">newest first</option>
+                    <option value="oldest">oldest first</option>
+                  </select>
+                </label>
+              </div>
+              <div className="row">
+                <span className="pill tone-info">info: {timelineCounts.info}</span>
+                <span className="pill tone-ok">ok: {timelineCounts.ok}</span>
+                <span className="pill tone-warn">warn: {timelineCounts.warn}</span>
+                <span className="pill tone-error">error: {timelineCounts.error}</span>
+              </div>
               <div className="log-stream">
                 <ul>
-                  {[...run.timeline].reverse().map((event, idx) => (
-                    <li key={`${event.timestamp}-${idx}`}>
-                      <strong>{event.agent}</strong> · {event.event} — {event.content}
+                  {filteredTimeline.map((event, idx) => (
+                    <li key={`${event.timestamp}-${idx}`} className={`timeline-item tone-${timelineEventTone(event)}`}>
+                      <div className="row spread">
+                        <strong>{event.agent}</strong>
+                        <span className="muted">
+                          {new Date(event.timestamp).toLocaleTimeString()} · {relativeTime(event.timestamp)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`pill tone-${timelineEventTone(event)}`}>{event.event}</span> — {event.content}
+                      </div>
                     </li>
                   ))}
                 </ul>
               </div>
             </section>
+
+            {remediationCandidates.length > 0 && (
+              <section className="card span-2">
+                <div className="row spread">
+                  <div>
+                    <h2>Failure Remediation Center</h2>
+                    <p className="muted">
+                      Guided recovery suggestions for rejected/failed steps with one-click re-run actions.
+                    </p>
+                  </div>
+                  <button onClick={() => void rerunAllRejectedActions()} disabled={loading}>
+                    {loading ? 'Retrying…' : 'Retry All Rejected'}
+                  </button>
+                </div>
+                <div className="operator-grid">
+                  {remediationCandidates.map((action) => {
+                    const remediation = remediationHints(action)
+                    return (
+                      <div key={action.id} className="metric-card remediation-card">
+                        <span className="metric-label">{action.action_type}</span>
+                        <strong>{action.description}</strong>
+                        <span className="muted">{remediation.rootCause}</span>
+                        <ul>
+                          {remediation.suggestions.map((hint) => (
+                            <li key={hint}>{hint}</li>
+                          ))}
+                        </ul>
+                        <button onClick={() => rerunFailedAction(action.id)}>Retry This Step</button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            )}
 
             <section className="card span-2">
               <h2>Audit View</h2>
@@ -1031,7 +1510,33 @@ function App() {
               <h2>Advanced Operations</h2>
               <p className="muted">Simulation, channel policies, and admin-only observability tools.</p>
             </div>
-            <button onClick={() => void loadAdminPanelData()}>Refresh Admin Data</button>
+            <button onClick={() => void loadAdminPanelData()} disabled={operatorLoading}>
+              {operatorLoading ? 'Refreshing…' : 'Refresh Admin Data'}
+            </button>
+          </div>
+          {operatorError && <p className="error">{operatorError}</p>}
+
+          <div className="operator-grid">
+            <div className="metric-card">
+              <span className="metric-label">Admin audit events</span>
+              <strong className="metric-value">{adminAuditStats?.entries ?? 0}</strong>
+              <span className="muted">capacity: {adminAuditStats?.max_entries ?? 0}</span>
+            </div>
+            <div className="metric-card">
+              <span className="metric-label">Retry queue</span>
+              <strong className="metric-value">{adminRetryQueue?.queued ?? 0}</strong>
+              <span className="muted">dead letters: {adminRetryQueue?.dead_lettered ?? 0}</span>
+            </div>
+            <div className="metric-card">
+              <span className="metric-label">Maintenance mode</span>
+              <strong className="metric-value">{maintenanceEnabledCount}</strong>
+              <span className="muted">channels enabled</span>
+            </div>
+            <div className="metric-card">
+              <span className="metric-label">Channel trust posture</span>
+              <strong className="metric-value">{openTrustChannels} open</strong>
+              <span className="muted">{channelTrustStatuses.length - openTrustChannels} pairing-gated</span>
+            </div>
           </div>
 
           <details>
@@ -1122,6 +1627,16 @@ function App() {
           <details>
             <summary>Channel Admin Controls</summary>
             <div className="detail-body">
+              <div className="operator-grid">
+                {channelTrustStatuses.map((status) => (
+                  <div key={status.channel} className="metric-card">
+                    <span className="metric-label">{status.channel} trust</span>
+                    <strong className="metric-value">{status.policy.dm_policy}</strong>
+                    <span className="muted">pending pairing: {status.pending_count}</span>
+                  </div>
+                ))}
+              </div>
+
               <div className="row">
                 <label>
                   Channel
@@ -1157,6 +1672,29 @@ function App() {
               </label>
               <button onClick={() => void saveApproverAllowlist()}>Save Approver Allowlist</button>
 
+              <h3>Maintenance Mode</h3>
+              <div className="row">
+                <label>
+                  Enabled
+                  <select
+                    value={maintenanceEnabledInput ? 'on' : 'off'}
+                    onChange={(e) => setMaintenanceEnabledInput(e.target.value === 'on')}
+                  >
+                    <option value="off">off</option>
+                    <option value="on">on</option>
+                  </select>
+                </label>
+                <label style={{ minWidth: '320px' }}>
+                  Reason
+                  <input
+                    value={maintenanceReasonInput}
+                    onChange={(e) => setMaintenanceReasonInput(e.target.value)}
+                    placeholder="Brief operator reason"
+                  />
+                </label>
+              </div>
+              <button onClick={() => void updateMaintenanceMode()}>Update Maintenance Mode</button>
+
               <h3>Pending Pairing Codes</h3>
               <div className="log-stream">
                 <ul>
@@ -1187,6 +1725,43 @@ function App() {
                   <li>Dead letters: {adminRetryQueue.dead_lettered}</li>
                 </ul>
               )}
+
+              <h3>Retry Dead-letter Queue</h3>
+              {adminDeadLetters.length === 0 ? (
+                <p className="muted">No dead-letter jobs.</p>
+              ) : (
+                <div className="log-stream">
+                  <ul>
+                    {adminDeadLetters.map((job) => (
+                      <li key={job.id}>
+                        <strong>{job.channel}</strong> · attempts {job.attempts}/{job.max_attempts}
+                        <div className="muted">{job.last_error ?? 'unknown error'}</div>
+                        <button onClick={() => void replayDeadLetter(job.id)}>Replay</button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <h3>Admin Audit</h3>
+              {adminAuditStats && (
+                <p className="muted">
+                  entries: {adminAuditStats.entries}/{adminAuditStats.max_entries}
+                </p>
+              )}
+              <button className="danger" onClick={() => void clearAdminAudit()}>
+                Clear Admin Audit
+              </button>
+              <div className="log-stream">
+                <ul>
+                  {[...adminAuditEntries].reverse().slice(0, 30).map((entry) => (
+                    <li key={entry.id}>
+                      <strong>{entry.actor}</strong> ({entry.actor_role}) · {entry.action}
+                      <div className="muted">origin={entry.origin} trace={entry.trace_id}</div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
           </details>
         </section>
