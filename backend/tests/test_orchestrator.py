@@ -1,6 +1,7 @@
 from pathlib import Path
 import hashlib
 import hmac
+import os
 import time
 
 from fastapi.testclient import TestClient
@@ -76,6 +77,43 @@ def test_parse_channel_command_supports_yes_no_aliases() -> None:
     assert parse_channel_command("Y") == ("approve", "")
     assert parse_channel_command("no") == ("reject", "")
     assert parse_channel_command("n") == ("reject", "")
+
+
+def test_create_run_fallback_timeline_includes_setup_hint_when_openai_key_missing(tmp_path: Path) -> None:
+    orchestrator = build_orchestrator()
+    original_key = os.environ.pop("OPENAI_API_KEY", None)
+    try:
+        run = orchestrator.create_run(
+            RunTaskRequest(goal="Explain fallback behavior", repo_path=str(tmp_path))
+        )
+    finally:
+        if original_key is not None:
+            os.environ["OPENAI_API_KEY"] = original_key
+
+    fallback_event = next(
+        (evt for evt in run.timeline if evt.event == "pipeline_fallback"),
+        None,
+    )
+    assert fallback_event is not None
+    assert "Set OPENAI_API_KEY" in fallback_event.content
+    assert "restart backend" in fallback_event.content
+
+
+def test_chat_fallback_message_includes_guided_onboarding_steps() -> None:
+    original_setting_key = runs_routes._settings.openai_api_key
+    original_env_key = os.environ.pop("OPENAI_API_KEY", None)
+    runs_routes._settings.openai_api_key = None
+    try:
+        text, mode = runs_routes._generate_chat_response("hello")
+    finally:
+        runs_routes._settings.openai_api_key = original_setting_key
+        if original_env_key is not None:
+            os.environ["OPENAI_API_KEY"] = original_env_key
+
+    assert mode == "fallback"
+    assert "guided fallback mode" in text
+    assert "genxbot onboard --interactive" in text
+    assert "genxbot doctor" in text
 
 
 def test_create_run_generates_plan_and_pending_actions(tmp_path: Path) -> None:

@@ -67,9 +67,23 @@ Then run:
 
 ```bash
 genxbot onboard
+genxbot onboard --interactive
 # optional daemon install on macOS/Linux
 genxbot onboard --install-daemon
+genxbot doctor
 ```
+
+Interactive onboarding highlights:
+
+- Detects first run and applies guided defaults (`AGENT_RUNTIME_MODE=single`, `CHANNEL_WEBHOOK_SECURITY_ENABLED=false`).
+- Prompts for `OPENAI_API_KEY` and `ADMIN_API_TOKEN` with validation and optional secure token generation.
+- Explains fallback behavior clearly when `OPENAI_API_KEY` is missing (deterministic runtime mode).
+
+Doctor preflight checks include:
+
+- Core dependencies (`node`, `npm`, `python`, `pip`, `uvicorn`, `fastapi` importability).
+- Runtime files/paths (`~/.genxbot/.env`, log dir, backend/frontend directories, dependency installation hints).
+- Token readiness (masked presence checks), default ports (`8000`, `5173`), and backend API reachability.
 
 ### Intended npm publish flow
 

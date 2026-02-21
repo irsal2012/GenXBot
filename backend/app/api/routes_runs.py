@@ -593,8 +593,15 @@ def _generate_chat_response(text: str) -> tuple[str, str]:
     api_key = _settings.openai_api_key or os.getenv("OPENAI_API_KEY")
     if not api_key:
         return (
-            "👋 Thanks for the message! I'm set up for coding tasks. "
-            "Describe what you want to build or fix and I'll start a run.",
+            "👋 You're in guided fallback mode (no OPENAI_API_KEY configured yet).\n\n"
+            "Quick start options:\n"
+            "- /run add unit tests for API endpoints\n"
+            "- /run investigate failing CI tests\n"
+            "- /run review PR risks and suggest fixes\n\n"
+            "To enable full live LLM planning/execution:\n"
+            "1) Run `genxbot onboard --interactive` and set OPENAI_API_KEY\n"
+            "2) Run `genxbot doctor`\n"
+            "3) Restart backend",
             "fallback",
         )
 
@@ -620,8 +627,11 @@ def _generate_chat_response(text: str) -> tuple[str, str]:
         return f"{message}\n\n(Model: {model})", "llm"
     except Exception:
         return (
-            "👋 Thanks for the message! I'm set up for coding tasks. "
-            "Describe what you want to build or fix and I'll start a run.",
+            "⚠️ Live chat model unavailable right now, so I'm using fallback mode.\n\n"
+            "You can still run tasks immediately. Try:\n"
+            "- /run add endpoint-level tests\n"
+            "- /run triage top 3 failing tests\n\n"
+            "If this keeps happening: check OPENAI_API_KEY, then run `genxbot doctor`.",
             "fallback",
         )
 

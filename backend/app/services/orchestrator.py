@@ -930,7 +930,11 @@ class GenXBotOrchestrator:
                 TimelineEvent(
                     agent="genxai_runtime",
                     event="pipeline_fallback",
-                    content="OPENAI_API_KEY missing; using deterministic fallback while keeping GenXAI wiring active.",
+                    content=(
+                        "OPENAI_API_KEY missing; using deterministic fallback while keeping GenXAI wiring active. "
+                        "Set OPENAI_API_KEY in backend/.env (or ~/.genxbot/.env for CLI onboarding) "
+                        "and restart backend to enable live LLM planning/execution."
+                    ),
                 )
             )
 

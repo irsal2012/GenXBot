@@ -2,8 +2,12 @@
 /* eslint-disable no-console */
 
 const fs = require("fs");
+const http = require("http");
+const net = require("net");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
+const readline = require("readline/promises");
 const { spawnSync } = require("child_process");
 
 const APP_NAME = "genxbot";
@@ -11,20 +15,29 @@ const HOME_DIR = os.homedir();
 const APP_HOME = path.join(HOME_DIR, ".genxbot");
 const LOG_DIR = path.join(APP_HOME, "logs");
 const ENV_PATH = path.join(APP_HOME, ".env");
+const DEFAULT_BACKEND_PORT = 8000;
+const DEFAULT_FRONTEND_PORT = 5173;
 
-const repoRoot = path.resolve(__dirname, "../../../..");
-const backendDir = path.join(repoRoot, "applications", "genxbot", "backend");
+const repoRoot = path.resolve(__dirname, "../..");
 
 function printHelp() {
   console.log(`
 GenXBot CLI
 
 Usage:
-  genxbot onboard [--install-daemon]
+  genxbot onboard [--interactive] [--install-daemon] [--yes]
+  genxbot doctor [--json]
   genxbot help
 
 Options:
+  --interactive        Guided onboarding prompts + validation checks
   --install-daemon     Install background daemon (macOS LaunchAgent / Linux systemd --user)
+  --yes                Accept defaults in interactive onboarding (where applicable)
+  --json               Machine-readable output for doctor command
+
+Tips:
+  - For first-time setup, run: genxbot onboard --interactive
+  - If OPENAI_API_KEY is not set, GenXBot runs in deterministic fallback mode
 `);
 }
 
@@ -38,11 +51,138 @@ function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
+function pathExists(targetPath) {
+  try {
+    fs.accessSync(targetPath, fs.constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function detectBackendDir() {
+  const candidates = [
+    path.join(repoRoot, "backend"),
+    path.join(repoRoot, "applications", "genxbot", "backend"),
+    path.join(process.cwd(), "backend"),
+    process.cwd(),
+  ];
+
+  for (const candidate of candidates) {
+    if (pathExists(path.join(candidate, "requirements.txt")) && pathExists(path.join(candidate, "app"))) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
+function detectFrontendDir() {
+  const candidates = [
+    path.join(repoRoot, "frontend"),
+    path.join(repoRoot, "applications", "genxbot", "frontend"),
+    path.join(process.cwd(), "frontend"),
+  ];
+
+  for (const candidate of candidates) {
+    if (pathExists(path.join(candidate, "package.json"))) {
+      return candidate;
+    }
+  }
+  return candidates[0];
+}
+
+function parseEnv(content) {
+  const values = {};
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const idx = line.indexOf("=");
+    if (idx <= 0) continue;
+    const key = line.slice(0, idx).trim();
+    const value = line.slice(idx + 1).trim();
+    values[key] = value;
+  }
+  return values;
+}
+
+function renderEnv(values) {
+  return [
+    "# GenXBot global environment",
+    `OPENAI_API_KEY=${values.OPENAI_API_KEY ?? ""}`,
+    `ADMIN_API_TOKEN=${values.ADMIN_API_TOKEN ?? ""}`,
+    `AGENT_RUNTIME_MODE=${values.AGENT_RUNTIME_MODE ?? "single"}`,
+    `CHANNEL_WEBHOOK_SECURITY_ENABLED=${values.CHANNEL_WEBHOOK_SECURITY_ENABLED ?? "false"}`,
+    "",
+  ].join("\n");
+}
+
 function writeEnvTemplate() {
   if (fs.existsSync(ENV_PATH)) return;
 
-  const template = `# GenXBot global environment\nOPENAI_API_KEY=\nADMIN_API_TOKEN=\nCHANNEL_WEBHOOK_SECURITY_ENABLED=false\n`;
+  const template = renderEnv({});
   fs.writeFileSync(ENV_PATH, template, "utf8");
+}
+
+function loadEnvValues() {
+  if (!pathExists(ENV_PATH)) return {};
+  return parseEnv(fs.readFileSync(ENV_PATH, "utf8"));
+}
+
+function validateEnv(values) {
+  const warnings = [];
+  const errors = [];
+
+  const mode = (values.AGENT_RUNTIME_MODE || "single").trim().toLowerCase();
+  if (mode && !["single", "multi", "hybrid"].includes(mode)) {
+    errors.push("AGENT_RUNTIME_MODE must be one of: single, multi, hybrid");
+  }
+
+  const apiKey = (values.OPENAI_API_KEY || "").trim();
+  if (!apiKey) {
+    warnings.push("OPENAI_API_KEY is missing. GenXBot will run deterministic fallback mode.");
+  }
+
+  const adminToken = (values.ADMIN_API_TOKEN || "").trim();
+  if (!adminToken) {
+    warnings.push("ADMIN_API_TOKEN is empty. Admin endpoint protection may be limited.");
+  }
+
+  return { warnings, errors };
+}
+
+function maskToken(value) {
+  const trimmed = (value || "").trim();
+  if (!trimmed) return "(empty)";
+  if (trimmed.length <= 8) return "****";
+  return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+}
+
+function generateAdminToken() {
+  return `genxbot_${crypto.randomBytes(16).toString("hex")}`;
+}
+
+function detectPythonCommand() {
+  if (checkCommand("python3")) return "python3";
+  if (checkCommand("python")) return "python";
+  return null;
+}
+
+function checkPythonImport(pyCommand, moduleName) {
+  if (!pyCommand) return false;
+  const res = spawnSync(pyCommand, ["-c", `import ${moduleName}`], { stdio: "ignore" });
+  return res.status === 0;
+}
+
+function printCheck(level, message) {
+  const icon = level === "PASS" ? "[ok]" : level === "WARN" ? "[warn]" : "[fail]";
+  console.log(`${icon} ${message}`);
+}
+
+function versionFor(command, args = ["--version"]) {
+  const result = spawnSync(command, args, { encoding: "utf8" });
+  if (result.status !== 0) return null;
+  return (result.stdout || result.stderr || "").trim().split("\n")[0];
 }
 
 function runBackendProbe() {
@@ -61,10 +201,12 @@ function runBackendProbe() {
 }
 
 function daemonCommand() {
+  const backendDir = detectBackendDir();
   return `cd ${backendDir} && python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000`;
 }
 
 function installMacDaemon() {
+  const backendDir = detectBackendDir();
   const launchAgents = path.join(HOME_DIR, "Library", "LaunchAgents");
   ensureDir(launchAgents);
 
@@ -109,6 +251,7 @@ function installMacDaemon() {
 }
 
 function installLinuxDaemon() {
+  const backendDir = detectBackendDir();
   const userSystemd = path.join(HOME_DIR, ".config", "systemd", "user");
   ensureDir(userSystemd);
 
@@ -153,14 +296,272 @@ function installDaemon() {
   console.warn("[warn] --install-daemon currently supports macOS and Linux.");
 }
 
+async function promptInput(rl, prompt, defaultValue = "") {
+  const suffix = defaultValue ? ` (${defaultValue})` : "";
+  const input = await rl.question(`${prompt}${suffix}: `);
+  return input.trim() || defaultValue;
+}
+
+async function interactiveOnboard({ yes = false }) {
+  const firstRun = !pathExists(ENV_PATH);
+  ensureDir(APP_HOME);
+  ensureDir(LOG_DIR);
+  writeEnvTemplate();
+
+  const backendDir = detectBackendDir();
+  const values = loadEnvValues();
+  let selectedMode = (values.AGENT_RUNTIME_MODE || "single").trim().toLowerCase();
+  if (!["single", "multi", "hybrid"].includes(selectedMode)) {
+    selectedMode = "single";
+  }
+
+  if (yes) {
+    values.AGENT_RUNTIME_MODE = selectedMode;
+    values.CHANNEL_WEBHOOK_SECURITY_ENABLED = values.CHANNEL_WEBHOOK_SECURITY_ENABLED || "false";
+    if (!values.ADMIN_API_TOKEN) {
+      values.ADMIN_API_TOKEN = generateAdminToken();
+    }
+  } else {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      console.log("\n[info] Interactive onboarding\n");
+      if (firstRun) {
+        console.log("[info] First run detected. We'll apply guided defaults and validate your environment.");
+      }
+      console.log(`[info] Detected backend path: ${backendDir}`);
+      console.log("[info] Guided defaults: AGENT_RUNTIME_MODE=single, CHANNEL_WEBHOOK_SECURITY_ENABLED=false");
+
+      values.OPENAI_API_KEY = await promptInput(
+        rl,
+        "OPENAI_API_KEY (recommended for live LLM planning/execution)",
+        values.OPENAI_API_KEY || "",
+      );
+      values.ADMIN_API_TOKEN = await promptInput(
+        rl,
+        "ADMIN_API_TOKEN (recommended for protected admin endpoints)",
+        values.ADMIN_API_TOKEN || "",
+      );
+      if (!values.ADMIN_API_TOKEN) {
+        const createToken = await promptInput(rl, "Generate a secure ADMIN_API_TOKEN now? [Y/n]", "Y");
+        if (!createToken || createToken.toLowerCase() === "y" || createToken.toLowerCase() === "yes") {
+          values.ADMIN_API_TOKEN = generateAdminToken();
+          console.log(`[ok] Generated ADMIN_API_TOKEN: ${maskToken(values.ADMIN_API_TOKEN)}`);
+        }
+      }
+
+      selectedMode = await promptInput(
+        rl,
+        "AGENT_RUNTIME_MODE [single|multi|hybrid]",
+        selectedMode,
+      );
+      while (!["single", "multi", "hybrid"].includes(selectedMode.toLowerCase())) {
+        console.log("[warn] Invalid runtime mode. Choose single, multi, or hybrid.");
+        selectedMode = await promptInput(rl, "AGENT_RUNTIME_MODE", "single");
+      }
+      values.AGENT_RUNTIME_MODE = selectedMode.toLowerCase();
+
+      const webhookSecurity = await promptInput(
+        rl,
+        "CHANNEL_WEBHOOK_SECURITY_ENABLED [true|false]",
+        values.CHANNEL_WEBHOOK_SECURITY_ENABLED || "false",
+      );
+      values.CHANNEL_WEBHOOK_SECURITY_ENABLED = webhookSecurity.toLowerCase() === "true" ? "true" : "false";
+    } finally {
+      rl.close();
+    }
+  }
+
+  const validation = validateEnv(values);
+  fs.writeFileSync(ENV_PATH, renderEnv(values), "utf8");
+
+  for (const warning of validation.warnings) {
+    printCheck("WARN", warning);
+  }
+  for (const error of validation.errors) {
+    printCheck("FAIL", error);
+  }
+
+  console.log("\n[done] Interactive onboarding completed.");
+  console.log(`- Env file: ${ENV_PATH}`);
+  console.log(`- Backend path: ${backendDir}`);
+  console.log(`- OPENAI_API_KEY: ${maskToken(values.OPENAI_API_KEY)}`);
+  console.log(`- ADMIN_API_TOKEN: ${maskToken(values.ADMIN_API_TOKEN)}`);
+  if (!values.OPENAI_API_KEY) {
+    console.log("\n[info] Fallback behavior: planning/execution will use deterministic fallback until OPENAI_API_KEY is set.");
+  }
+  console.log("\nNext steps:");
+  console.log("1) Run `genxbot doctor` to verify dependencies, ports, and config.");
+  console.log(`2) Start backend: cd ${backendDir} && uvicorn app.main:app --reload --port 8000`);
+}
+
+function checkPort(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve({ available: false }));
+    server.once("listening", () => {
+      server.close(() => resolve({ available: true }));
+    });
+    server.listen(port, "127.0.0.1");
+  });
+}
+
+function probeHttp(url) {
+  return new Promise((resolve) => {
+    const req = http.get(url, { timeout: 1500 }, (res) => {
+      resolve({ ok: res.statusCode >= 200 && res.statusCode < 500, statusCode: res.statusCode });
+      res.resume();
+    });
+    req.on("error", (err) => resolve({ ok: false, error: err.message }));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve({ ok: false, error: "timeout" });
+    });
+  });
+}
+
+async function doctor({ json = false }) {
+  const backendDir = detectBackendDir();
+  const frontendDir = detectFrontendDir();
+  const envValues = loadEnvValues();
+  const envValidation = validateEnv(envValues);
+
+  const checks = [];
+  const add = (name, level, detail) => checks.push({ name, level, detail });
+
+  const nodeVersion = versionFor("node", ["--version"]);
+  add("node", nodeVersion ? "PASS" : "FAIL", nodeVersion || "node not found");
+  const npmVersion = versionFor("npm", ["--version"]);
+  add("npm", npmVersion ? "PASS" : "FAIL", npmVersion || "npm not found");
+  const pyCommand = detectPythonCommand();
+  const pyVersion = versionFor(pyCommand || "python3", ["--version"]);
+  add("python", pyVersion ? "PASS" : "FAIL", pyVersion || "python3/python not found");
+  const pipCommand = checkCommand("pip3") ? "pip3" : checkCommand("pip") ? "pip" : null;
+  const pipVersion = versionFor(pipCommand || "pip3", ["--version"]);
+  add("pip", pipVersion ? "PASS" : "WARN", pipVersion || "pip3/pip not found");
+  const uvicornVersion = versionFor("uvicorn", ["--version"]);
+  add("uvicorn", uvicornVersion ? "PASS" : "WARN", uvicornVersion || "uvicorn not found in PATH");
+  const fastapiImportOk = checkPythonImport(pyCommand, "fastapi");
+  add(
+    "python_fastapi",
+    fastapiImportOk ? "PASS" : "WARN",
+    fastapiImportOk ? "fastapi import ok" : "fastapi import failed (activate venv and install backend requirements)",
+  );
+
+  add(
+    "backend_dir",
+    pathExists(path.join(backendDir, "requirements.txt")) ? "PASS" : "FAIL",
+    backendDir,
+  );
+  add(
+    "frontend_dir",
+    pathExists(path.join(frontendDir, "package.json")) ? "PASS" : "WARN",
+    frontendDir,
+  );
+  add(
+    "backend_requirements",
+    pathExists(path.join(backendDir, "requirements.txt")) ? "PASS" : "FAIL",
+    path.join(backendDir, "requirements.txt"),
+  );
+  add(
+    "frontend_node_modules",
+    pathExists(path.join(frontendDir, "node_modules")) ? "PASS" : "WARN",
+    pathExists(path.join(frontendDir, "node_modules"))
+      ? "frontend dependencies installed"
+      : "frontend dependencies missing (run npm install in frontend)",
+  );
+
+  add("app_home", pathExists(APP_HOME) ? "PASS" : "WARN", APP_HOME);
+  add("log_dir", pathExists(LOG_DIR) ? "PASS" : "WARN", LOG_DIR);
+
+  add("env_file", pathExists(ENV_PATH) ? "PASS" : "WARN", ENV_PATH);
+  add(
+    "openai_token",
+    (envValues.OPENAI_API_KEY || "").trim() ? "PASS" : "WARN",
+    (envValues.OPENAI_API_KEY || "").trim()
+      ? `configured (${maskToken(envValues.OPENAI_API_KEY)})`
+      : "missing (deterministic fallback mode will be used)",
+  );
+  add(
+    "admin_token",
+    (envValues.ADMIN_API_TOKEN || "").trim() ? "PASS" : "WARN",
+    (envValues.ADMIN_API_TOKEN || "").trim()
+      ? `configured (${maskToken(envValues.ADMIN_API_TOKEN)})`
+      : "missing (admin endpoint protection may be limited)",
+  );
+  for (const warning of envValidation.warnings) {
+    add("env_validation", "WARN", warning);
+  }
+  for (const error of envValidation.errors) {
+    add("env_validation", "FAIL", error);
+  }
+
+  const backendPort = await checkPort(DEFAULT_BACKEND_PORT);
+  add(
+    "port_8000",
+    backendPort.available ? "PASS" : "WARN",
+    backendPort.available ? "port available" : "port in use (backend may already be running)",
+  );
+  const frontendPort = await checkPort(DEFAULT_FRONTEND_PORT);
+  add(
+    "port_5173",
+    frontendPort.available ? "PASS" : "WARN",
+    frontendPort.available ? "port available" : "port in use (frontend may already be running)",
+  );
+
+  const apiProbe = await probeHttp("http://127.0.0.1:8000/api/v1/runs");
+  if (apiProbe.ok) {
+    add("backend_api", "PASS", `reachable (status ${apiProbe.statusCode})`);
+  } else {
+    add("backend_api", "WARN", `unreachable (${apiProbe.error || "not running"})`);
+  }
+
+  const summary = {
+    PASS: checks.filter((c) => c.level === "PASS").length,
+    WARN: checks.filter((c) => c.level === "WARN").length,
+    FAIL: checks.filter((c) => c.level === "FAIL").length,
+  };
+
+  if (json) {
+    console.log(JSON.stringify({ checks, summary }, null, 2));
+  } else {
+    console.log("[info] GenXBot doctor report\n");
+    for (const item of checks) {
+      printCheck(item.level, `${item.name}: ${item.detail}`);
+    }
+    console.log(`\n[summary] pass=${summary.PASS} warn=${summary.WARN} fail=${summary.FAIL}`);
+  }
+
+  if (summary.FAIL > 0) {
+    process.exit(1);
+  }
+}
+
 function onboard({ installDaemonFlag }) {
+  const backendDir = detectBackendDir();
+  const firstRun = !pathExists(ENV_PATH);
   console.log("[info] Starting GenXBot onboarding...");
   ensureDir(APP_HOME);
   ensureDir(LOG_DIR);
   writeEnvTemplate();
 
+  const values = loadEnvValues();
+  values.AGENT_RUNTIME_MODE = (values.AGENT_RUNTIME_MODE || "single").trim().toLowerCase();
+  if (!["single", "multi", "hybrid"].includes(values.AGENT_RUNTIME_MODE)) {
+    values.AGENT_RUNTIME_MODE = "single";
+  }
+  values.CHANNEL_WEBHOOK_SECURITY_ENABLED =
+    (values.CHANNEL_WEBHOOK_SECURITY_ENABLED || "false").trim().toLowerCase() === "true"
+      ? "true"
+      : "false";
+  fs.writeFileSync(ENV_PATH, renderEnv(values), "utf8");
+
   console.log(`[ok] App home: ${APP_HOME}`);
   console.log(`[ok] Env file: ${ENV_PATH}`);
+  if (firstRun) {
+    console.log("[info] First run detected. Applied safe defaults:");
+    console.log("       - AGENT_RUNTIME_MODE=single");
+    console.log("       - CHANNEL_WEBHOOK_SECURITY_ENABLED=false");
+  }
 
   const hasNode = checkCommand("node");
   const hasNpm = checkCommand("npm");
@@ -172,17 +573,30 @@ function onboard({ installDaemonFlag }) {
 
   runBackendProbe();
 
+  const validation = validateEnv(values);
+  for (const warning of validation.warnings) {
+    printCheck("WARN", warning);
+  }
+  for (const error of validation.errors) {
+    printCheck("FAIL", error);
+  }
+
+  if (!values.OPENAI_API_KEY) {
+    console.log("[info] Fallback behavior: without OPENAI_API_KEY, GenXBot uses deterministic fallback mode.");
+  }
+
   if (installDaemonFlag) {
     installDaemon();
   }
 
   console.log("[done] Onboarding complete.");
   console.log("Next:");
-  console.log(`  1) Edit ${ENV_PATH}`);
-  console.log(`  2) Start backend manually: cd ${backendDir} && uvicorn app.main:app --reload --port 8000`);
+  console.log("  1) Run `genxbot onboard --interactive` for guided token setup and validation");
+  console.log("  2) Run `genxbot doctor` for full preflight diagnostics");
+  console.log(`  3) Start backend manually: cd ${backendDir} && uvicorn app.main:app --reload --port 8000`);
 }
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
 
@@ -193,7 +607,20 @@ function main() {
 
   if (command === "onboard") {
     const installDaemonFlag = args.includes("--install-daemon");
+    const interactive = args.includes("--interactive");
+    const yes = args.includes("--yes");
+    if (interactive) {
+      await interactiveOnboard({ yes });
+      if (installDaemonFlag) installDaemon();
+      process.exit(0);
+    }
     onboard({ installDaemonFlag });
+    process.exit(0);
+  }
+
+  if (command === "doctor") {
+    const asJson = args.includes("--json");
+    await doctor({ json: asJson });
     process.exit(0);
   }
 

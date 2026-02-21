@@ -49,6 +49,8 @@ If you installed the CLI globally:
 
 ```bash
 genxbot onboard
+genxbot onboard --interactive
+genxbot doctor
 ```
 
 Or with daemon setup (macOS/Linux):
@@ -56,6 +58,18 @@ Or with daemon setup (macOS/Linux):
 ```bash
 genxbot onboard --install-daemon
 ```
+
+Notes:
+
+- `genxbot onboard --interactive` guides env setup with validation (including `AGENT_RUNTIME_MODE`).
+- `genxbot doctor` checks dependencies, env readiness, ports (`8000`, `5173`), and backend API reachability.
+
+Additional onboarding UX improvements:
+
+- First-run detection with guided defaults (`AGENT_RUNTIME_MODE=single`, `CHANNEL_WEBHOOK_SECURITY_ENABLED=false`).
+- Prompted token setup with optional secure `ADMIN_API_TOKEN` generation.
+- Clear fallback explanation when `OPENAI_API_KEY` is missing (deterministic mode).
+- Expanded doctor checks for `pip`, backend `fastapi` importability, frontend dependency presence, and masked token readiness.
 
 This initializes:
 

@@ -27,6 +27,8 @@ If you already installed the CLI globally, do this first:
 ```bash
 genxbot help
 genxbot onboard
+genxbot onboard --interactive
+genxbot doctor
 ```
 
 Optional daemon setup (macOS/Linux):
@@ -39,6 +41,26 @@ This creates:
 
 - `~/.genxbot/.env`
 - `~/.genxbot/logs/`
+
+Recommended flow:
+
+- Use `genxbot onboard --interactive` to set env values with validation.
+- Run `genxbot doctor` to verify dependencies, ports, and backend API readiness before starting services.
+
+What `--interactive` now does for first-time users:
+
+- Detects first-run state and applies guided defaults:
+  - `AGENT_RUNTIME_MODE=single`
+  - `CHANNEL_WEBHOOK_SECURITY_ENABLED=false`
+- Prompts for `OPENAI_API_KEY` and `ADMIN_API_TOKEN` with validation.
+- Offers secure auto-generation of `ADMIN_API_TOKEN` if omitted.
+- Clearly explains deterministic fallback behavior if `OPENAI_API_KEY` is missing.
+
+What `doctor` checks now:
+
+- Dependencies: `node`, `npm`, `python`, `pip`, `uvicorn`, and `fastapi` import.
+- Local readiness: `~/.genxbot/.env`, `~/.genxbot/logs`, backend/frontend paths, and install hints.
+- Runtime readiness: token presence (masked), ports `8000`/`5173`, and backend API reachability.
 
 ### Important current behavior
 
