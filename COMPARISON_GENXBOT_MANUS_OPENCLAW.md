@@ -53,12 +53,10 @@ If your priority is **customization + policy/compliance + architecture control**
 
 1. **Turnkey autonomy UX consistency**
    - Generally cleaner defaults and less variability across environments.
-2. **Lifecycle polish at scale**
-   - More battle-tested installers and operational UX in broader deployments.
-3. **Productized UI/flows**
+2. **Productized UI/flows**
    - Better run visualization, guided error handling, and onboarding ergonomics.
-4. **Release/distribution maturity**
-   - More automated release discipline and package lifecycle management.
+3. **Lifecycle polish at scale**
+   - More battle-tested installers and operational UX in broader deployments.
 
 ---
 
@@ -80,33 +78,7 @@ Choose **OpenClaw** when you need:
 
 ---
 
-## GenXBot parity status (toward Manus/OpenClaw feel)
-
-### Completed
-
-#### Priority 1 — Product UX and onboarding
-1. ✅ Interactive onboarding (`genxbot onboard --interactive`) with environment validation.
-2. ✅ Preflight diagnostics (`genxbot doctor`) for ports, tokens, dependencies.
-3. ✅ Improved first-run assistant experience with guided defaults and fallback explanations.
-
-#### Priority 2 — CLI lifecycle completeness
-4. ✅ Implemented `genxbot start|stop|status|logs|uninstall`.
-5. ✅ Added persistent daemon metadata and health status snapshots.
-
-### Remaining gaps
-
-#### Priority 3 — Frontend product polish
-6. ◑ In progress: richer runtime/channel behavior (web chat-vs-command intent, yes/no approval shortcuts, auto-approve path for eligible web users).
-7. ◑ In progress: operator capabilities exposed via API (audit, retry queue, maintenance mode, trust policy, idempotency stats) with continued UI consolidation pending.
-8. ◑ In progress: retry/replay controls and queue health endpoints exist; deeper guided remediation UX remains.
-
-#### Priority 4 — Release and distribution maturity
-9. ◑ In progress: CI release automation present (`release-please`, CLI release workflows), with ongoing hardening.
-10. ◑ In progress: npm package publish/tag and validation checks are present, with further guardrails to be added.
-
----
-
 ## Bottom line
 
 GenXBot is strong in **control-plane quality** (governance, reliability, operations) and has materially improved in onboarding/lifecycle usability.  
-Remaining deltas vs Manus/OpenClaw are now mostly about **end-to-end product polish consistency and advanced UX refinement**, rather than missing foundational platform capabilities.
+Remaining deltas vs Manus/OpenClaw are now mostly about **end-to-end product polish consistency and advanced UX refinement at scale**, rather than missing foundational platform or release capabilities.

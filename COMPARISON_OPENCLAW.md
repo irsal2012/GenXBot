@@ -6,9 +6,9 @@
 
 ## TL;DR
 
-- **GenXBot today**: strong backend/API + governance controls + channel operations, with new global CLI scaffold.
-- **OpenClaw-style experience**: typically more polished out-of-the-box product UX (installer + end-user workflow ergonomics).
-- **Bottom line**: GenXBot is technically capable and increasingly production-oriented, but may need additional polish to match OpenClaw-level turnkey experience.
+- **GenXBot today**: strong backend/API + governance controls + channel operations, with onboarding, doctor checks, daemon lifecycle, and release automation now in place.
+- **OpenClaw-style experience**: still typically ahead in fully uniform turnkey UX across environments.
+- **Bottom line**: GenXBot has closed most foundational gaps; remaining differences are mainly advanced product polish and consistency at scale.
 
 ---
 
@@ -16,8 +16,8 @@
 
 | Area | GenXBot (this repo) | OpenClaw-style expectation |
 |---|---|---|
-| Install UX | ✅ Global CLI scaffold (`genxbot onboard`) | ✅ Usually one-command polished installer |
-| Daemon setup | ✅ `--install-daemon` for macOS/Linux | ✅ Usually built-in, often with richer lifecycle commands |
+| Install UX | ✅ Global CLI + interactive onboarding (`genxbot onboard --interactive`) | ✅ Usually one-command polished installer |
+| Daemon setup | ✅ `--install-daemon` + `start/stop/status/logs/uninstall` lifecycle commands | ✅ Usually built-in, often with richer lifecycle commands |
 | Core coding-run API | ✅ Full run lifecycle (`create/list/get/approve`) | ✅ Core requirement |
 | Approval/safety gates | ✅ Explicit action approvals + policy controls | ✅ Usually present |
 | Channel integrations | ✅ Slack/Telegram ingestion + command parsing | ✅ Often included |
@@ -26,8 +26,8 @@
 | Admin audit | ✅ Audit entries + retention + clear/stats | ✅ Expected in serious deployments |
 | Idempotency/retries | ✅ Idempotency cache + outbound retry/deadletter | ✅ Strong reliability baseline |
 | Maintenance mode | ✅ Per-channel maintenance switch | ⚠️ Not always exposed in MVP tools |
-| Frontend product polish | ⚠️ Functional, but still evolving | ✅ Usually stronger “consumer-grade” UX |
-| Distribution maturity | ⚠️ Publish pipeline still manual docs/process | ✅ Often full release automation |
+| Frontend product polish | ✅ Improved run timeline + operator views; still evolving for premium UX parity | ✅ Usually stronger “consumer-grade” UX |
+| Distribution maturity | ✅ Automated versioning/changelog/release workflows | ✅ Often full release automation |
 
 ---
 
@@ -39,39 +39,45 @@
    - Admin roles, auditability, protected mutation paths.
 3. **Flexible architecture**
    - API-first backend and channel pathways give multiple integration surfaces.
+4. **CLI/runtime usability**
+   - Interactive onboarding, doctor checks, and service lifecycle management.
+5. **Release discipline**
+   - Release-please automation, CLI release workflow, publish safety checks.
 
 ---
 
-## Likely gaps vs polished OpenClaw deployments
+## Remaining deltas vs polished OpenClaw deployments
 
-1. **Installer and lifecycle UX depth**
-   - Add first-class `start/stop/status/logs/doctor/uninstall` CLI commands.
-2. **Release automation**
-   - Automate npm publish + versioning + signed/tagged releases.
-3. **End-user onboarding polish**
-   - Interactive guided setup, better secret validation, richer diagnostics.
-4. **UI experience**
-   - More guided flows, richer run visualization, built-in troubleshooting views.
+1. **Cross-environment consistency**
+   - Ensure equally smooth behavior across all host setups (not only common paths).
+2. **Advanced UX refinement**
+   - More guided remediation flows, richer troubleshooting narratives, and fewer operator decisions.
+3. **Enterprise packaging polish**
+   - Signed artifacts, broader packaging targets, and stricter release hardening.
+4. **Deeper runtime observability in UI**
+   - More proactive run-health signals and root-cause surfacing for non-technical users.
 
 ---
 
-## Suggested roadmap to match/exceed OpenClaw UX
+## Status-corrected roadmap
 
-### Phase A — CLI lifecycle completeness
-- Add `genxbot start|stop|status|logs|doctor|uninstall`.
-- Persist daemon metadata and provide cross-platform status output.
+### Completed foundation work
+- ✅ `genxbot start|stop|status|logs|doctor|uninstall`
+- ✅ Persistent daemon metadata + status snapshots
+- ✅ Interactive onboarding + preflight diagnostics
+- ✅ Release automation and publish validation gates
+- ✅ Frontend timeline/operator views and retry/admin capabilities
 
-### Phase B — Release maturity
-- Add CI workflow for package lint/test/pack/publish on tags.
-- Automate changelog and semver policy checks.
+### Next refinement phases
 
-### Phase C — Onboarding + guardrails
-- Add interactive `genxbot onboard --interactive` with env validation.
-- Add preflight checks for backend/frontend/ports/dependencies.
+#### Phase A — UX consistency hardening
+- Normalize first-run and recovery UX for a wider set of developer/operator environments.
 
-### Phase D — Product UX improvements
-- Improve frontend run timeline/debug visibility.
-- Add operator dashboard for admin audit + maintenance + queue status.
+#### Phase B — Premium troubleshooting UX
+- Add guided “why this failed” and recommended one-click repair flows.
+
+#### Phase C — Distribution hardening
+- Expand signed releases, package channels, and stricter CI quality/security gates.
 
 ---
 
@@ -83,4 +89,5 @@ If your question is: **“Can GenXBot be used to build and run an OpenClaw-like 
 
 If your question is: **“Is it already at feature/UX parity with mature OpenClaw product experience?”**
 
-**Not fully yet** — but the foundations are in place, and the gap is mostly productization/UX/release automation rather than core architecture.
+**Closer than before** — core platform, lifecycle, onboarding, and release foundations are now present.
+Remaining differences are mostly around top-tier UX consistency and premium product polish, not missing core capabilities.

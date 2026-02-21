@@ -33,6 +33,14 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
+      - name: Install CLI dependencies (if needed)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts --no-audit --no-fund
+          fi
+
       - name: Validate package metadata and changelog
         run: node ./scripts/release-check.cjs "${GITHUB_REF_NAME}"
 
@@ -75,6 +83,15 @@ jobs:
 
       - name: Re-check tag/version gate before publish
         run: node ./scripts/release-check.cjs "${GITHUB_REF_NAME}"
+
+      - name: Ensure tag version is not already published
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view genxbot@"${VERSION}" version >/dev/null 2>&1; then
+            echo "Version ${VERSION} is already published on npm."
+            exit 1
+          fi
+          echo "Version ${VERSION} is not yet published."
 
       - name: Publish package
         run: npm publish --access public --provenance

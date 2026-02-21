@@ -189,6 +189,7 @@ const sec = (value: number) => `${value.toFixed(2)}s`
 const channels: Array<'slack' | 'telegram' | 'web'> = ['slack', 'telegram', 'web']
 const statusOrder: Array<ProposedAction['status']> = ['pending', 'approved', 'executed', 'rejected']
 const timelineToneOrder: Array<'all' | 'ok' | 'warn' | 'error' | 'info'> = ['all', 'ok', 'warn', 'error', 'info']
+const runStatusFlow: Array<RunSession['status']> = ['created', 'awaiting_approval', 'running', 'completed']
 
 const relativeTime = (timestamp: string) => {
   const now = Date.now()
@@ -241,6 +242,26 @@ function stateTone(status: ProposedAction['status']): 'warn' | 'ok' | 'error' | 
   if (status === 'approved' || status === 'executed') return 'ok'
   if (status === 'rejected') return 'error'
   return 'info'
+}
+
+function deadLetterHint(job: OutboundRetryJob): { rootCause: string; suggestion: string } {
+  const detail = `${job.last_error ?? ''} ${job.text}`.toLowerCase()
+  if (detail.includes('429') || detail.includes('rate')) {
+    return {
+      rootCause: 'Provider rate limiting on outbound channel.',
+      suggestion: 'Throttle retries and replay during lower traffic windows.',
+    }
+  }
+  if (detail.includes('auth') || detail.includes('token') || detail.includes('forbidden')) {
+    return {
+      rootCause: 'Outbound credential/permission mismatch.',
+      suggestion: 'Validate webhook/bot token and channel permissions before replay.',
+    }
+  }
+  return {
+    rootCause: 'Transient delivery failure or channel endpoint drift.',
+    suggestion: 'Replay once; if repeated, enable maintenance mode and inspect outbound config.',
+  }
 }
 
 function parseDiffArtifact(content: string): { before: string; after: string } | null {
@@ -399,6 +420,25 @@ function App() {
     () => channelTrustStatuses.filter((status) => status.policy.dm_policy === 'open').length,
     [channelTrustStatuses],
   )
+
+  const runLifecycle = useMemo(() => {
+    if (!run) return [] as Array<{ status: RunSession['status']; reached: boolean; active: boolean }>
+    const reached = new Set<RunSession['status']>()
+    for (const event of run.timeline) {
+      const text = `${event.event} ${event.content}`.toLowerCase()
+      if (text.includes('created')) reached.add('created')
+      if (text.includes('awaiting_approval') || text.includes('awaiting approval')) reached.add('awaiting_approval')
+      if (text.includes('running') || text.includes('execut')) reached.add('running')
+      if (text.includes('completed')) reached.add('completed')
+      if (text.includes('failed')) reached.add('failed')
+    }
+    reached.add(run.status)
+    return [...runStatusFlow, 'failed' as const].map((status) => ({
+      status,
+      reached: reached.has(status),
+      active: run.status === status,
+    }))
+  }, [run])
 
   const appendChatMessage = (message: ChatMessage) => {
     setChatMessages((prev) => [...prev, message])
@@ -1249,6 +1289,17 @@ function App() {
                 Timeline footprint: {run.timeline.length} events · errors {timelineCounts.error} · warnings{' '}
                 {timelineCounts.warn}
               </p>
+              <div className="lifecycle-strip">
+                {runLifecycle.map((step, idx) => (
+                  <div
+                    key={step.status}
+                    className={`lifecycle-step ${step.reached ? 'reached' : ''} ${step.active ? 'active' : ''}`}
+                  >
+                    <span>{step.status}</span>
+                    {idx < runLifecycle.length - 1 && <span className="lifecycle-arrow">→</span>}
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section className="card">
@@ -1732,13 +1783,19 @@ function App() {
               ) : (
                 <div className="log-stream">
                   <ul>
-                    {adminDeadLetters.map((job) => (
+                    {adminDeadLetters.map((job) => {
+                      const hint = deadLetterHint(job)
+                      return (
                       <li key={job.id}>
                         <strong>{job.channel}</strong> · attempts {job.attempts}/{job.max_attempts}
                         <div className="muted">{job.last_error ?? 'unknown error'}</div>
+                        <div className="muted">
+                          Root-cause hint: {hint.rootCause} · Suggestion: {hint.suggestion}
+                        </div>
                         <button onClick={() => void replayDeadLetter(job.id)}>Replay</button>
                       </li>
-                    ))}
+                      )
+                    })}
                   </ul>
                 </div>
               )}

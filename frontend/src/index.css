@@ -436,6 +436,43 @@ button.danger {
   border-color: rgba(34, 197, 94, 0.45);
 }
 
+.lifecycle-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.lifecycle-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.lifecycle-step.reached {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, 0.35);
+}
+
+.lifecycle-step.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #bae6fd;
+  background: rgba(8, 47, 73, 0.5);
+}
+
+.lifecycle-arrow {
+  color: #7dd3fc;
+}
+
 .diff-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
