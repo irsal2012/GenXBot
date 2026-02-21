@@ -1,0 +1,12 @@
+{
+  "id": "github-issues-assistant",
+  "name": "GitHub Issues Assistant",
+  "description": "Route GitHub issue and triage requests to the gh-issues recipe.",
+  "goal_template": "Execute the GitHub issues workflow and summarize issue updates",
+  "context_template": "focus=github-issues\npriority={priority}",
+  "recipe_id": "gh-issues",
+  "trigger_phrases": ["github issue", "issue triage", "bug ticket", "gh issues"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["github", "issues"],
+  "enabled": true
+}

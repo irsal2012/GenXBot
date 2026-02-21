@@ -1,0 +1,25 @@
+{
+  "id": "bugfix-workflow",
+  "name": "Bugfix Workflow",
+  "description": "Standardized workflow for reproducing, patching, and documenting a bug fix.",
+  "goal_template": "Execute bugfix workflow for {bug_area} and summarize root cause and fix",
+  "context_template": "bug_area={bug_area}\npriority={priority}\nconstraints={constraints}",
+  "tags": [
+    "bugfix",
+    "engineering"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Capture baseline runtime info",
+      "command": "python3 --version"
+    },
+    {
+      "action_type": "edit",
+      "description": "Write bugfix report",
+      "file_path": "recipe_outputs/bugfix_report.md",
+      "patch": "FULL_FILE_CONTENT:\n# Bugfix Report\\n\\n- area: {bug_area}\\n- priority: {priority}\\n- constraints: {constraints}\\n\\n## Root Cause\\n- TBD\\n\\n## Fix Summary\\n- TBD\\n"
+    }
+  ]
+}

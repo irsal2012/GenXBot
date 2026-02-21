@@ -1,0 +1,27 @@
+{
+  "id": "logs-investigation-assistant",
+  "name": "Logs Investigation Assistant",
+  "description": "Route logs analysis requests to the logs-investigation recipe.",
+  "goal_template": "Investigate logs for {system_area} and summarize notable anomalies",
+  "context_template": "system_area={system_area}\npriority={priority}\nconstraints={constraints}",
+  "recipe_id": "logs-investigation",
+  "trigger_phrases": [
+    "investigate logs",
+    "analyze logs",
+    "log anomalies",
+    "incident logs"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "regex_matcher",
+    "data_validator"
+  ],
+  "tags": [
+    "logs",
+    "observability",
+    "incident"
+  ],
+  "enabled": true
+}

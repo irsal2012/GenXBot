@@ -1,0 +1,12 @@
+{
+  "id": "tmux-assistant",
+  "name": "Tmux Assistant",
+  "description": "Route tmux terminal workflow requests to the tmux recipe.",
+  "goal_template": "Execute the tmux workflow and summarize terminal session actions",
+  "context_template": "focus=tmux\npriority={priority}",
+  "recipe_id": "tmux",
+  "trigger_phrases": ["tmux", "terminal session", "pane", "window split"],
+  "tool_allowlist": ["directory_scanner", "file_reader", "file_writer", "code_executor", "data_validator"],
+  "tags": ["terminal", "devops"],
+  "enabled": true
+}

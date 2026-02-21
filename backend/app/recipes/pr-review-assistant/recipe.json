@@ -1,0 +1,26 @@
+{
+  "id": "pr-review-assistant",
+  "name": "PR Review Assistant",
+  "description": "Run quick quality checks and generate a pull request review summary.",
+  "goal_template": "Review current repository changes for PR readiness and summarize findings",
+  "context_template": "focus={focus}\npriority={priority}\nconstraints={constraints}",
+  "tags": [
+    "code-review",
+    "quality",
+    "productivity"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Collect Python version for environment sanity",
+      "command": "python3 --version"
+    },
+    {
+      "action_type": "edit",
+      "description": "Write PR review summary artifact",
+      "file_path": "recipe_outputs/pr_review_summary.md",
+      "patch": "FULL_FILE_CONTENT:\n# PR Review Summary\\n\\n- focus: {focus}\\n- priority: {priority}\\n- constraints: {constraints}\\n\\n## Checklist\\n- [ ] Tests pass\\n- [ ] Risky areas identified\\n- [ ] Reviewer notes captured\\n"
+    }
+  ]
+}

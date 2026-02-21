@@ -1,0 +1,26 @@
+{
+  "id": "release-readiness-assistant",
+  "name": "Release Readiness Assistant",
+  "description": "Route release checklist and readiness requests to release-readiness recipe.",
+  "goal_template": "Prepare release readiness summary for version {version}",
+  "context_template": "version={version}\npriority={priority}\nconstraints={constraints}",
+  "recipe_id": "release-readiness",
+  "trigger_phrases": [
+    "release readiness",
+    "release checklist",
+    "prepare release",
+    "go live checklist"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "release",
+    "ops"
+  ],
+  "enabled": true
+}

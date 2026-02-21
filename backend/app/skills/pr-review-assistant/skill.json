@@ -1,0 +1,26 @@
+{
+  "id": "pr-review-assistant",
+  "name": "PR Review Assistant",
+  "description": "Route pull request review and readiness requests to the PR review recipe.",
+  "goal_template": "Review current repository changes for PR readiness and summarize findings",
+  "context_template": "focus={focus}\npriority={priority}\nconstraints={constraints}",
+  "recipe_id": "pr-review-assistant",
+  "trigger_phrases": [
+    "pr review",
+    "pull request review",
+    "review this pr",
+    "code review summary"
+  ],
+  "tool_allowlist": [
+    "directory_scanner",
+    "file_reader",
+    "file_writer",
+    "code_executor",
+    "data_validator"
+  ],
+  "tags": [
+    "code-review",
+    "quality"
+  ],
+  "enabled": true
+}

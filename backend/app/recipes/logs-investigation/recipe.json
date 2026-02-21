@@ -1,0 +1,26 @@
+{
+  "id": "logs-investigation",
+  "name": "Logs Investigation",
+  "description": "Analyze logs and produce a concise investigation summary.",
+  "goal_template": "Investigate logs for {system_area} and summarize notable anomalies",
+  "context_template": "system_area={system_area}\npriority={priority}\nconstraints={constraints}",
+  "tags": [
+    "logs",
+    "observability",
+    "incident"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Capture environment runtime",
+      "command": "python3 --version"
+    },
+    {
+      "action_type": "edit",
+      "description": "Write logs investigation summary",
+      "file_path": "recipe_outputs/logs_investigation.md",
+      "patch": "FULL_FILE_CONTENT:\n# Logs Investigation\\n\\n- system area: {system_area}\\n- priority: {priority}\\n- constraints: {constraints}\\n\\n## Findings\\n- TBD\\n\\n## Suggested Next Steps\\n- TBD\\n"
+    }
+  ]
+}

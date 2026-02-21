@@ -1,0 +1,26 @@
+{
+  "id": "release-readiness",
+  "name": "Release Readiness",
+  "description": "Prepare release checklist artifacts and a status summary.",
+  "goal_template": "Prepare release readiness summary for version {version}",
+  "context_template": "version={version}\npriority={priority}\nconstraints={constraints}",
+  "tags": [
+    "release",
+    "ops",
+    "checklist"
+  ],
+  "enabled": true,
+  "action_templates": [
+    {
+      "action_type": "command",
+      "description": "Collect runtime baseline",
+      "command": "python3 --version"
+    },
+    {
+      "action_type": "edit",
+      "description": "Write release readiness checklist",
+      "file_path": "recipe_outputs/release_readiness.md",
+      "patch": "FULL_FILE_CONTENT:\n# Release Readiness\\n\\n- version: {version}\\n- priority: {priority}\\n- constraints: {constraints}\\n\\n## Checklist\\n- [ ] Test suite status\\n- [ ] Deployment plan\\n- [ ] Rollback strategy\\n"
+    }
+  ]
+}

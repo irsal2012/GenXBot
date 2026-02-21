@@ -371,3 +371,77 @@ curl -X POST "http://localhost:8000/api/v1/runs/skills" \
     "action_templates": []
   }'
 ```
+
+---
+
+## Built-in Skill Run Examples (newly added)
+
+Use these with `POST /api/v1/runs` to execute a specific skill directly.
+
+> Base URL: `http://localhost:8000/api/v1/runs`
+
+### 1) Spotify Assistant
+
+```json
+{
+  "goal": "placeholder",
+  "repo_path": ".",
+  "skill_id": "spotify-assistant",
+  "skill_inputs": {"priority": "high"}
+}
+```
+
+### 2) Voice Call Assistant
+
+```json
+{
+  "goal": "placeholder",
+  "repo_path": ".",
+  "skill_id": "voice-call-assistant",
+  "skill_inputs": {"priority": "high"}
+}
+```
+
+### 3) GitHub Issues Assistant
+
+```json
+{
+  "goal": "placeholder",
+  "repo_path": ".",
+  "skill_id": "github-issues-assistant",
+  "skill_inputs": {"priority": "medium"}
+}
+```
+
+### 4) Tmux Assistant
+
+```json
+{
+  "goal": "placeholder",
+  "repo_path": ".",
+  "skill_id": "tmux-assistant",
+  "skill_inputs": {"priority": "medium"}
+}
+```
+
+### 5) Session Logs Assistant
+
+```json
+{
+  "goal": "placeholder",
+  "repo_path": ".",
+  "skill_id": "session-logs-assistant",
+  "skill_inputs": {"priority": "high"}
+}
+```
+
+### 6) Model Usage Assistant
+
+```json
+{
+  "goal": "placeholder",
+  "repo_path": ".",
+  "skill_id": "model-usage-assistant",
+  "skill_inputs": {"priority": "medium"}
+}
+```
